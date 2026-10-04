@@ -113,6 +113,15 @@ class PhilipsAventCoordinator(DataUpdateCoordinator):
         self.async_set_updated_data(merged)
 
     @property
+    def out_of_bed(self) -> bool:
+        """The sleep session says the crib is empty ("scanning crib" on the monitor).
+
+        Lets the entities show "off" after a restart instead of unknown, when no
+        breathing reading has arrived because nobody is in bed.
+        """
+        return bool(self.sleep) and self.sleep.get("stage") == "out"
+
+    @property
     def breathing_age(self) -> int | None:
         """Seconds since the last SenseIQ reading."""
         if self._breathing_at is None:

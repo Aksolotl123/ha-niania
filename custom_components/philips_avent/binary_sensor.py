@@ -248,7 +248,7 @@ class AventInBed(CoordinatorEntity, BinarySensorEntity):
     def is_on(self) -> bool | None:
         reading = self.coordinator.breathing
         if reading is None:
-            return None
+            return False if self.coordinator.out_of_bed else None
         return self.coordinator.breathing_fresh and reading.in_bed
 
     @property
@@ -276,5 +276,5 @@ class AventMovingNow(CoordinatorEntity, BinarySensorEntity):
     def is_on(self) -> bool | None:
         reading = self.coordinator.breathing
         if reading is None:
-            return None
+            return False if self.coordinator.out_of_bed else None
         return self.coordinator.breathing_fresh and reading.moving
