@@ -70,6 +70,9 @@ class PhilipsAventCoordinator(DataUpdateCoordinator):
         self._rssi_refreshed_at = None
         self.breathing: BreathingReading | None = None
         self._breathing_at: float | None = None
+        # Last measured rate, held through movement so the history stays continuous.
+        self.last_breathing_rate: int | None = None
+        self._last_breathing_rate_at: float | None = None
         self._breathing_expiry_unsub = None
         self.sleep: dict | None = None
 
@@ -129,6 +132,13 @@ class PhilipsAventCoordinator(DataUpdateCoordinator):
         return round(time.monotonic() - self._breathing_at)
 
     @property
+    def last_breathing_rate_age(self) -> int | None:
+        """Seconds since the held breathing rate was measured."""
+        if self._last_breathing_rate_at is None:
+            return None
+        return round(time.monotonic() - self._last_breathing_rate_at)
+
+    @property
     def breathing_fresh(self) -> bool:
         """Whether a SenseIQ reading arrived recently, i.e. the baby is in bed."""
         return (
@@ -147,8 +157,16 @@ class PhilipsAventCoordinator(DataUpdateCoordinator):
         if DPS_SENSEIQ_BREATHING in dps:
             reading = parse_breathing(dps[DPS_SENSEIQ_BREATHING])
             if reading is not None:
+                now = time.monotonic()
+                if not self.breathing_fresh:
+                    # Back in bed after a gap: a rate from before must not show up again.
+                    self.last_breathing_rate = None
+                    self._last_breathing_rate_at = None
+                if reading.breathing_rate is not None:
+                    self.last_breathing_rate = reading.breathing_rate
+                    self._last_breathing_rate_at = now
                 self.breathing = reading
-                self._breathing_at = time.monotonic()
+                self._breathing_at = now
                 if self._breathing_expiry_unsub:
                     self._breathing_expiry_unsub()
                 self._breathing_expiry_unsub = async_call_later(

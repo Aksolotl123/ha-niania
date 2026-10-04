@@ -102,7 +102,12 @@ class _AventSenseIQSensor(CoordinatorEntity, SensorEntity):
 
 
 class AventBreathingRateSensor(_AventSenseIQSensor):
-    """Breaths per minute; unknown while the baby moves or is out of bed."""
+    """Breaths per minute.
+
+    The monitor cannot measure while the baby moves, so the last measured rate is
+    held through movement (``current`` false in the attributes) to keep the
+    history continuous. Unknown once the baby is out of bed.
+    """
 
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = "/min"
@@ -112,10 +117,19 @@ class AventBreathingRateSensor(_AventSenseIQSensor):
 
     @property
     def native_value(self) -> int | None:
-        reading = self.coordinator.breathing
-        if reading is None or not self.coordinator.breathing_fresh:
+        if self.coordinator.breathing is None or not self.coordinator.breathing_fresh:
             return None
-        return reading.breathing_rate
+        return self.coordinator.last_breathing_rate
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        reading = self.coordinator.breathing
+        if self.native_value is None or reading is None:
+            return None
+        return {
+            "current": reading.breathing_rate is not None,
+            "measured_age_s": self.coordinator.last_breathing_rate_age,
+        }
 
 
 class AventSleepStageSensor(_AventSenseIQSensor):
