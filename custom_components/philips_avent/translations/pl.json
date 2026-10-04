@@ -1,0 +1,88 @@
+{
+  "config": {
+    "step": {
+      "keys": {
+        "title": "Klucze aplikacji Philips Avent",
+        "description": "Ta integracja nie zawiera kluczy Tuya aplikacji Philips Avent Baby Monitor+. Wpisz je raz — zostaną zapisane w tym wpisie konfiguracji i użyte ponownie przy kolejnych kontach. Skąd je wziąć: README, sekcja „Klucze aplikacji”.",
+        "data": {
+          "app_key": "Klucz aplikacji (clientId)",
+          "signing_key": "Klucz podpisu (signing key)",
+          "ch_key": "Klucz kanału (chKey)"
+        },
+        "data_description": {
+          "app_key": "20 znaków: litery i cyfry.",
+          "signing_key": "Długa wartość zaczynająca się od com.philips.ph.babymonitorplus_",
+          "ch_key": "8 znaków szesnastkowych."
+        }
+      },
+      "login": {
+        "title": "Philips Avent Baby Monitor",
+        "description": "Podaj dane logowania do konta {app_name}.",
+        "data": {
+          "email": "E-mail",
+          "password": "Hasło",
+          "country": "Kraj konta Avent"
+        },
+        "data_description": {
+          "country": "Kraj wybrany przy zakładaniu konta Philips Avent. Od niego zależy, który serwer Philips/Tuya trzyma Twoje konto — zła wartość kończy się błędem logowania."
+        }
+      },
+      "mfa": {
+        "title": "Kod weryfikacyjny",
+        "description": "Kod weryfikacyjny został wysłany na {email}. Wpisz go poniżej.",
+        "data": {
+          "mfa_code": "Kod 6-cyfrowy"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Ponowne logowanie Philips Avent",
+        "description": "Sesja wygasła. Podaj ponownie dane logowania.",
+        "data": {
+          "email": "E-mail",
+          "password": "Hasło",
+          "country": "Kraj konta Avent"
+        },
+        "data_description": {
+          "country": "Kraj wybrany przy zakładaniu konta Philips Avent. Od niego zależy, który serwer Philips/Tuya trzyma Twoje konto — zła wartość kończy się błędem logowania."
+        }
+      },
+      "reauth_mfa": {
+        "title": "Ponowne logowanie — kod weryfikacyjny",
+        "description": "Kod weryfikacyjny został wysłany na {email}. Wpisz go poniżej.",
+        "data": {
+          "mfa_code": "Kod 6-cyfrowy"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Nieprawidłowy e-mail lub hasło",
+      "invalid_mfa": "Nieprawidłowy kod weryfikacyjny",
+      "cannot_connect": "Brak połączenia z serwerami Philips Avent",
+      "tuya_error": "Logowanie nie powiodło się. Tuya zwróciła: {error_code}. Włącz logowanie debug i sprawdź log.",
+      "unknown": "Nieoczekiwany błąd",
+      "wrong_region": "Twoje konto nie jest na serwerze, którego próbowaliśmy (Tuya zwróciła: {error_code}). Wróć i wybierz kraj, w którym założono konto Avent.",
+      "invalid_keys": "Klucze wyglądają na błędne: klucz aplikacji ma 20 liter i cyfr, klucz kanału 8 znaków szesnastkowych, a klucz podpisu zaczyna się od com.philips.ph.babymonitorplus_"
+    },
+    "abort": {
+      "already_configured": "To konto jest już skonfigurowane",
+      "reauth_successful": "Ponowne logowanie zakończone sukcesem"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Ustawienia mostka Philips Avent",
+        "data": {
+          "bridge_host": "Host mostka",
+          "bridge_port": "Port RTSP mostka",
+          "talkback": "Dźwięk dwukierunkowy (talkback)"
+        },
+        "data_description": {
+          "bridge_host": "Gdzie Home Assistant znajdzie mostek WebRTC. Zostaw localhost, jeśli używasz dodatku (add-on); podaj nazwę kontenera lub IP, jeśli mostek działa gdzie indziej.",
+          "bridge_port": "Port, na którym nasłuchuje mostek WebRTC (domyślnie 38554)",
+          "talkback": "Zostaw wyłączone, chyba że naprawdę mówisz przez strumień. Żądanie dźwięku dwukierunkowego zatrzymuje graną kołysankę i uruchamia ją od nowa po zamknięciu strumienia."
+        }
+      }
+    }
+  }
+}

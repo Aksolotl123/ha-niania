@@ -1,0 +1,293 @@
+"""Philips Avent Baby Monitor integration for Home Assistant."""
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
+import aiohttp
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
+
+from .api import PhilipsAventAPI, keys_from_data
+from .const import (
+    CONF_API_HOST,
+    CONF_BRIDGE_PORT,
+    CONF_COUNTRY_CODE,
+    CONF_DEVICE_ID,
+    CONF_ECODE,
+    CONF_PARTNER,
+    CONF_SID,
+    CONF_TALKBACK,
+    DEFAULT_BRIDGE_PORT,
+    DEFAULT_TALKBACK,
+    DOMAIN,
+    TUYA_DEFAULT_COUNTRY_CODE,
+    TUYA_PACKAGE_NAME,
+)
+from .coordinator import PhilipsAventCoordinator
+from .payload import (
+    BRIDGE_CONFIG_PREFIX,
+    bridge_config_filename,
+    build_bridge_config,
+    orphan_bridge_configs,
+    strip_stored_password,
+    write_bridge_config_file,
+)
+from .region import DEFAULT_DATA_CENTER, api_host, api_url_for_host
+
+_LOGGER = logging.getLogger(__name__)
+
+PLATFORMS = [Platform.CAMERA, Platform.SENSOR, Platform.SWITCH, Platform.NUMBER, Platform.BUTTON, Platform.SELECT, Platform.BINARY_SENSOR]
+
+
+def _entry_api_host(entry: ConfigEntry) -> str:
+    """API host for this account, falling back to Central Europe.
+
+    Entries created before data-center routing existed have no host stored; EU
+    is the right fallback for them because that was the only host the
+    integration ever used (issues #44, #58).
+    """
+    return entry.data.get(CONF_API_HOST) or api_host(DEFAULT_DATA_CENTER)
+
+
+async def _write_bridge_config(hass: HomeAssistant, entry: ConfigEntry, api: PhilipsAventAPI, cameras: list) -> None:
+    """Write bridge config JSON for the add-on."""
+    bridge_port = entry.options.get(CONF_BRIDGE_PORT, DEFAULT_BRIDGE_PORT)
+    bridge_config = build_bridge_config(
+        signing_key=api.keys.signing_key,
+        sid=entry.data[CONF_SID],
+        ecode=entry.data.get(CONF_ECODE, ""),
+        partner=entry.data.get(CONF_PARTNER, ""),
+        app_key=api.keys.app_key,
+        device_id=api.device_id,
+        package_name=TUYA_PACKAGE_NAME,
+        api_host=_entry_api_host(entry),
+        talkback=entry.options.get(CONF_TALKBACK, DEFAULT_TALKBACK),
+        bridge_port=bridge_port,
+        cameras=cameras,
+    )
+    bridge_path = Path(hass.config.path(bridge_config_filename(entry.entry_id)))
+    # Owner-only: the file carries a live Tuya session and /config is mounted
+    # by the Samba, File Editor and Terminal add-ons, and copied by backups.
+    await hass.async_add_executor_job(
+        write_bridge_config_file, bridge_path, bridge_config
+    )
+    _LOGGER.info(
+        "Bridge config written to %s (port: %d, api host: %s)",
+        bridge_path, bridge_port, bridge_config["api_host"],
+    )
+
+    legacy_path = Path(hass.config.path("philips_avent_bridge.json"))
+    if await hass.async_add_executor_job(legacy_path.exists):
+        await hass.async_add_executor_job(legacy_path.unlink)
+        _LOGGER.info("Removed legacy bridge config %s", legacy_path)
+
+    await _remove_orphan_bridge_configs(hass)
+
+
+async def _remove_orphan_bridge_configs(hass: HomeAssistant) -> None:
+    """Delete bridge config files belonging to entries that no longer exist.
+
+    Re-adding the integration mints a new entry id, so the previous file stayed
+    behind and the add-on could keep reading it: old session, old camera id, and
+    a Tuya "No access" on every stream attempt (issue #52). Reinstalling made it
+    worse, since each attempt left one more file.
+    """
+    config_dir = Path(hass.config.path())
+    valid = {entry.entry_id for entry in hass.config_entries.async_entries(DOMAIN)}
+
+    def _prune() -> list[str]:
+        names = [p.name for p in config_dir.glob(f"{BRIDGE_CONFIG_PREFIX}*.json")]
+        removed = []
+        for name in orphan_bridge_configs(names, valid):
+            try:
+                (config_dir / name).unlink()
+            except OSError as err:
+                _LOGGER.warning("Could not remove stale bridge config %s: %s", name, err)
+            else:
+                removed.append(name)
+        return removed
+
+    removed = await hass.async_add_executor_job(_prune)
+    for name in removed:
+        _LOGGER.info(
+            "Removed stale bridge config %s, it belonged to a config entry that no longer exists",
+            name,
+        )
+
+
+async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload integration when options change."""
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
+def _purge_stored_password(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove a password persisted by an older version of the config flow.
+
+    Nothing ever read it back — reauth prompts for it again — so it was
+    plaintext in .storage/core.config_entries and in every backup for no
+    benefit. New entries no longer store it; this clears the ones that do.
+    """
+    cleaned = strip_stored_password(entry.data)
+    if cleaned is None:
+        return
+    hass.config_entries.async_update_entry(entry, data=cleaned)
+    _LOGGER.info("Removed the stored account password from the config entry; it was never used")
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up Philips Avent from a config entry."""
+    _purge_stored_password(hass, entry)
+
+    keys = keys_from_data(entry.data)
+    if keys is None:
+        # The Tuya app keys are not shipped in code; reauth asks for them again.
+        raise ConfigEntryAuthFailed("Tuya app keys are missing from the config entry")
+
+    session = aiohttp.ClientSession()
+    api = PhilipsAventAPI(
+        session,
+        keys,
+        sid=entry.data[CONF_SID],
+        api_url=api_url_for_host(_entry_api_host(entry)),
+        country_code=entry.data.get(CONF_COUNTRY_CODE) or TUYA_DEFAULT_COUNTRY_CODE,
+        device_id=entry.data.get(CONF_DEVICE_ID),
+    )
+    if not entry.data.get(CONF_DEVICE_ID):
+        # Entries created before the id was persisted: keep the one just
+        # generated, so the bridge config stops changing on every restart
+        # (issue #73).
+        hass.config_entries.async_update_entry(
+            entry, data={**entry.data, CONF_DEVICE_ID: api.device_id}
+        )
+        _LOGGER.info("Stored a stable device id for this account")
+
+    # Use cameras stored in config entry (discovered during config flow)
+    cameras = []
+    stored_cameras = entry.data.get("cameras", [])
+    if stored_cameras:
+        cameras.extend(
+            {
+                "deviceId": cam["id"],
+                "deviceName": cam["name"],
+                "productId": cam.get("product_id", ""),
+            }
+            for cam in stored_cameras
+        )
+        _LOGGER.info("Using %d cameras from config entry", len(cameras))
+
+        # Backfill productId for entries created before this field was tracked.
+        # Guard on key presence in the stored entry, NOT on the in-memory value,
+        # so post-fix entries with a genuinely empty productId (e.g. a device
+        # that does not expose one) don't trigger a cloud call on every restart.
+        if any("product_id" not in cam for cam in stored_cameras):
+            patched = 0
+            try:
+                discovered = await api.discover_cameras()
+                by_id = {(d.get("devId") or d.get("deviceId")): d for d in discovered}
+                for cam in cameras:
+                    if not cam.get("productId"):
+                        disc = by_id.get(cam.get("deviceId"))
+                        if disc:
+                            new_id = disc.get("productId") or disc.get("productKey") or ""
+                            if new_id:
+                                cam["productId"] = new_id
+                                patched += 1
+                if patched:
+                    updated_stored_cameras = [
+                        {**stored_cam, "product_id": cam.get("productId", "")}
+                        for stored_cam, cam in zip(stored_cameras, cameras)
+                    ]
+                    hass.config_entries.async_update_entry(
+                        entry,
+                        data={**entry.data, "cameras": updated_stored_cameras},
+                    )
+                    _LOGGER.info("Backfilled productId for %d camera(s) and persisted to config entry", patched)
+                else:
+                    _LOGGER.info("Backfill ran but no productId was recovered from Tuya discovery")
+            except Exception:  # noqa: BLE001 - setup continues even if the backfill fails
+                _LOGGER.warning(
+                    "Could not backfill productId from Tuya API; SCD951 cameras may fail "
+                    "to stream until HA restarts or the integration is reconfigured"
+                )
+    else:
+        # Fallback: re-discover via API
+        try:
+            cameras = await api.discover_cameras()
+        except Exception:
+            _LOGGER.exception("Camera discovery failed")
+            cameras = []
+
+    if not cameras:
+        _LOGGER.error("No cameras found. Reconfigure the integration to re-discover.")
+        await session.close()
+        return False
+
+    coordinators = {}
+    for cam in cameras:
+        cam_id = cam.get("deviceId") or cam.get("devId")
+        cam_name = cam.get("deviceName") or cam.get("name", cam_id)
+        local_key = cam.get("localKey")
+
+        coordinator = PhilipsAventCoordinator(hass, api, cam_id, cam_name, local_key=local_key)
+        await coordinator.async_config_entry_first_refresh()
+
+        if not local_key:
+            local_key = coordinator.device_info.get("localKey")
+            if local_key:
+                coordinator._local_key = local_key
+
+        await coordinator.start_lan()
+        coordinators[cam_id] = coordinator
+
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
+        "api": api,
+        "session": session,
+        "coordinators": coordinators,
+        "config": entry.data,
+    }
+
+    await _write_bridge_config(hass, entry, api, cameras)
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
+
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+    if unload_ok:
+        data = hass.data[DOMAIN].pop(entry.entry_id)
+        for coordinator in data["coordinators"].values():
+            await coordinator.stop_lan()
+        await data["session"].close()
+
+    return unload_ok
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Delete this entry's bridge config when the integration is removed.
+
+    Without this the file survived the removal, and the add-on could pick it
+    over the file of whatever entry the user created next (issue #52).
+    """
+    bridge_path = Path(hass.config.path(bridge_config_filename(entry.entry_id)))
+
+    def _unlink() -> bool:
+        try:
+            bridge_path.unlink()
+        except FileNotFoundError:
+            return False
+        except OSError as err:
+            _LOGGER.warning("Could not remove bridge config %s: %s", bridge_path, err)
+            return False
+        return True
+
+    if await hass.async_add_executor_job(_unlink):
+        _LOGGER.info("Removed bridge config %s", bridge_path)

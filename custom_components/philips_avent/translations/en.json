@@ -1,0 +1,167 @@
+{
+  "config": {
+    "step": {
+      "keys": {
+        "title": "Philips Avent app keys",
+        "description": "This integration does not ship the Tuya keys of the Philips Avent Baby Monitor+ app. Enter them once; they are kept in this config entry and reused for further accounts. See the README, section \"Klucze aplikacji\".",
+        "data": {
+          "app_key": "App key (clientId)",
+          "signing_key": "Signing key",
+          "ch_key": "Channel key (chKey)"
+        },
+        "data_description": {
+          "app_key": "20 characters, letters and digits.",
+          "signing_key": "Long value starting with com.philips.ph.babymonitorplus_",
+          "ch_key": "8 hexadecimal characters."
+        }
+      },
+      "login": {
+        "title": "Philips Avent Baby Monitor",
+        "description": "Enter your {app_name} account credentials.",
+        "data": {
+          "email": "Email",
+          "password": "Password",
+          "country": "Country of your Avent account"
+        },
+        "data_description": {
+          "country": "The country you picked when creating the Philips Avent account. It decides which Philips/Tuya server holds your account, so a wrong value makes the login fail."
+        }
+      },
+      "mfa": {
+        "title": "Verification Code",
+        "description": "A verification code has been sent to {email}. Enter it below.",
+        "data": {
+          "mfa_code": "6-digit code"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate Philips Avent",
+        "description": "Your session has expired. Please re-enter your credentials.",
+        "data": {
+          "email": "Email",
+          "password": "Password",
+          "country": "Country of your Avent account"
+        },
+        "data_description": {
+          "country": "The country you picked when creating the Philips Avent account. It decides which Philips/Tuya server holds your account, so a wrong value makes the login fail."
+        }
+      },
+      "reauth_mfa": {
+        "title": "Re-authenticate - Verification Code",
+        "description": "A verification code has been sent to {email}. Enter it below.",
+        "data": {
+          "mfa_code": "6-digit code"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid email or password",
+      "invalid_mfa": "Invalid verification code",
+      "cannot_connect": "Cannot connect to Philips Avent servers",
+      "tuya_error": "Login failed. Tuya reported: {error_code}. Enable debug logging and check the log for details, then report this code if the problem persists.",
+      "unknown": "Unexpected error",
+      "wrong_region": "Your account is not on the server we tried (Tuya reported: {error_code}). Go back and select the country where the Avent account was created.",
+      "invalid_keys": "These keys do not look right: the app key has 20 letters and digits, the channel key 8 hexadecimal characters, and the signing key starts with com.philips.ph.babymonitorplus_"
+    },
+    "abort": {
+      "already_configured": "This account is already configured",
+      "reauth_successful": "Re-authentication successful"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Philips Avent Bridge Settings",
+        "data": {
+          "bridge_host": "Bridge host",
+          "bridge_port": "Bridge RTSP port",
+          "talkback": "Two-way audio (talkback)"
+        },
+        "data_description": {
+          "bridge_host": "Where Home Assistant can reach the WebRTC bridge. Leave it as localhost when you use the add-on; set the container name or IP address if you run the bridge yourself, elsewhere.",
+          "bridge_port": "Port the WebRTC bridge listens on (default: 38554)",
+          "talkback": "Leave this off unless a client of yours actually talks back through the stream. Asking the camera for two-way audio makes the monitor stop a playing lullaby and restart it from the beginning when you close the stream."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "temperature": {
+        "name": "Temperature"
+      },
+      "wifi_signal": {
+        "name": "WiFi Signal"
+      }
+    },
+    "switch": {
+      "138": {
+        "name": "Night Light"
+      },
+      "136": {
+        "name": "Motion Alert"
+      },
+      "137": {
+        "name": "Sound Alert"
+      },
+      "105": {
+        "name": "Privacy Mode"
+      }
+    },
+    "number": {
+      "158": {
+        "name": "Night Light Brightness"
+      },
+      "209": {
+        "name": "Lullaby Volume"
+      }
+    },
+    "button": {
+      "lullaby_play": {
+        "name": "Lullaby Play"
+      },
+      "lullaby_pause": {
+        "name": "Lullaby Pause"
+      },
+      "lullaby_stop": {
+        "name": "Lullaby Stop"
+      },
+      "lullaby_next": {
+        "name": "Lullaby Next"
+      },
+      "lullaby_prev": {
+        "name": "Lullaby Prev"
+      }
+    },
+    "select": {
+      "lullaby_track": {
+        "name": "Lullaby Track"
+      },
+      "play_mode": {
+        "name": "Play Mode"
+      },
+      "212_timer": {
+        "name": "Lullaby Timer"
+      },
+      "211_timer": {
+        "name": "Night Light Timer"
+      }
+    },
+    "binary_sensor": {
+      "lullaby_playing": {
+        "name": "Lullaby Playing"
+      },
+      "motion_detected": {
+        "name": "Motion Detected"
+      },
+      "sound_detected": {
+        "name": "Sound Detected"
+      }
+    },
+    "camera": {
+      "camera": {
+        "name": "Camera"
+      }
+    }
+  }
+}

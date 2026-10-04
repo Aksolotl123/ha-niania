@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+.env
+*.local
+# Lokalne pliki z kluczami — nigdy do repo
+klucze*.txt
+*.secret

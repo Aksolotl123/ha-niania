@@ -1,0 +1,154 @@
+"""Constants for the Philips Avent Baby Monitor integration."""
+from __future__ import annotations
+
+DOMAIN = "philips_avent"
+
+# Tuya Mobile SDK keys of the Philips Avent Baby Monitor+ app (the same for every
+# user of a given APK version). Deliberately not shipped in code: this repository
+# is public, so the user enters them once in the config flow ("keys" step) and the
+# integration keeps them in the config entry. See README, "Klucze aplikacji".
+CONF_APP_KEY = "app_key"
+CONF_SIGNING_KEY = "signing_key"
+CONF_CH_KEY = "ch_key"
+TUYA_PACKAGE_NAME = "com.philips.ph.babymonitorplus"
+
+# Default data center (Central Europe). A Tuya account is bound to one data
+# center and its session id is rejected by the others, so the real host is
+# resolved per account at login time by `region.py` and persisted in the config
+# entry. These two constants are only the fallback for entries created before
+# that resolution existed (issues #44, #58).
+TUYA_API_URL = "https://a1.tuyaeu.com/api.json"
+TUYA_DEFAULT_COUNTRY_CODE = "39"
+
+# MQTT is never addressed by a constant: the login response and
+# `smartlife.m.user.info.get` both return the account's own broker in their
+# `domain` block (`mobileMqttsUrl`, e.g. m1.tuyaeu.com for EU accounts,
+# m1.tuyaus.com for American ones) and the bridge connects to that.
+TUYA_MQTT_PORT = 8883
+
+# Device model naming (issue #42). The Tuya productId does not distinguish
+# models within the SCD9xx family — the same id ("selj2idknqhjnids") has been
+# reported by both SCD951 and SCD953/26 units — so the displayed model stays
+# generic. Add an entry here only when a productId is confirmed to belong to
+# exactly one model.
+PRODUCT_ID_TO_MODEL: dict[str, str] = {}
+DEFAULT_MODEL = "Avent Baby Monitor"
+
+# DPS codes
+DPS_NIGHT_LIGHT = "138"
+DPS_BRIGHTNESS = "158"
+DPS_LIGHT_COLOR = "204"
+DPS_LIGHT_TIMER = "240"
+DPS_LIGHT_TIMER_SWITCH = "241"
+DPS_TEMPERATURE = "207"
+DPS_TEMPERATURE_F = "208"
+DPS_MOTION_SWITCH = "134"
+DPS_MOTION_SENSITIVITY = "106"
+DPS_SOUND_SWITCH = "139"
+DPS_SOUND_SENSITIVITY = "140"
+DPS_LULLABY_CONTROL = "201"
+DPS_LULLABY_VOLUME = "209"
+DPS_LULLABY_MODE = "203"
+DPS_LULLABY_STATE = "246"
+DPS_LULLABY_TIMER_SWITCH = "243"
+DPS_LULLABY_TIMER = "244"
+DPS_PRIVACY_MODE = "237"
+DPS_POWER_STATUS = "205"
+DPS_FLIP = "102"
+DPS_APP_TALKING = "253"
+# Alert delivery differs by family and by negotiated LAN protocol version. A
+# decrypted capture (#51) found none of these three in the LAN DP_QUERY set, and
+# on a 3.3 session none of them ever arrived as a push. On 3.5, DPS 212 does
+# arrive: an SCD951 owner measured a motion record pushed with the sensor firing
+# 1.3 seconds later, where the poll took 35 (#61). Sound on that same monitor
+# still came through the poll, so coordinator.py keeps the fast poll for monitors
+# reporting alarms in 212 rather than counting on the push.
+DPS_ALERT_EVENT = "250"
+DPS_DECIBEL_EVENT = "141"
+# Alarm record with the snapshot the camera uploaded. The SCD951 and SCD953
+# family reports motion here instead of on DPS 250 (issues #61, #42); see
+# events.py for the payload. One slot holding the newest alarm, not a queue.
+DPS_ALARM_RECORD = "212"
+
+LULLABY_TRACK_MAP = {
+    3542154: ("Baa Baa Black Sheep", "lullabies"),
+    3542155: ("Brahms' Lullaby", "lullabies"),
+    3542156: ("Rock-a-Bye Baby", "lullabies"),
+    3542157: ("Golden Slumbers", "lullabies"),
+    3542158: ("Hush Little Baby", "lullabies"),
+    3542159: ("Mother's Shh", "noise"),
+    3542160: ("Calming River", "noise"),
+    3542161: ("Heartbeat", "noise"),
+    3542162: ("Vacuum Cleaner", "noise"),
+    3542163: ("White Noise", "noise"),
+    3542164: ("Garden Bird Song", "nature_sounds"),
+    3542165: ("Valley Wind", "nature_sounds"),
+    3542166: ("Ocean Shore", "nature_sounds"),
+    3542167: ("Night-time Nature", "nature_sounds"),
+    3542168: ("Rain Shower", "nature_sounds"),
+}
+
+TIMER_OPTIONS = {
+    "Off": 0,
+    "5 min": 300,
+    "10 min": 600,
+    "20 min": 1200,
+    "30 min": 1800,
+    "60 min": 3600,
+    "90 min": 5400,
+}
+TIMER_SECONDS_TO_LABEL = {v: k for k, v in TIMER_OPTIONS.items()}
+
+LULLABY_TRACKS = [name for name, _ in LULLABY_TRACK_MAP.values()]
+LULLABY_ID_BY_NAME = {name: tid for tid, (name, _) in LULLABY_TRACK_MAP.items()}
+
+CONF_SID = "sid"
+CONF_API_HOST = "api_host"
+# Phone device id, generated once and kept, see api.new_device_id and issue #73.
+CONF_DEVICE_ID = "device_id"
+CONF_COUNTRY_CODE = "country_code"
+CONF_ECODE = "ecode"
+CONF_PARTNER = "partner_identity"
+CONF_UID = "uid"
+CONF_CAMERA_ID = "camera_id"
+CONF_CAMERA_NAME = "camera_name"
+CONF_BRIDGE_PORT = "bridge_port"
+DEFAULT_BRIDGE_PORT = 38554
+CONF_BRIDGE_HOST = "bridge_host"
+DEFAULT_BRIDGE_HOST = "localhost"
+# Two-way audio. Off by default: asking the camera for it makes the monitor stop
+# a playing lullaby and restart it with a fresh timer when the stream closes
+# (issue #72), so listening must not imply talking.
+CONF_TALKBACK = "talkback"
+DEFAULT_TALKBACK = False
+
+
+def sanitize_rtsp_path(name: str, cam_id: str) -> str:
+    """Convert a camera display name into an RTSP path component.
+
+    Spaces, forward slashes and backslashes are replaced with underscores.
+    If the result is empty or consists only of an underscore, falls back to
+    the camera id. Returns the path component WITHOUT a leading slash; the
+    caller composes the URL.
+
+    Mirrors `pkg/storage/path.go::SanitizeRTSPPath` in the Go bridge. The two
+    helpers MUST stay in sync — they determine whether the integration's RTSP
+    URL matches the path the bridge serves.
+    """
+    safe = name.replace(" ", "_").replace("/", "_").replace("\\", "_")
+    if safe == "" or safe == "_":
+        safe = cam_id
+    return safe
+
+
+def build_rtsp_url(host: str, port: int, name: str, cam_id: str) -> str:
+    """Build the RTSP URL Home Assistant should pull the stream from.
+
+    The host defaults to localhost, which only holds when the bridge runs
+    alongside Home Assistant (add-on, or same container). A bridge in its own
+    container or on another machine is not reachable there, and the resulting
+    "Connection refused" makes the camera entity flap between Unavailable and
+    Idle, because Home Assistant marks a camera unavailable while its stream
+    cannot be opened (issue #62).
+    """
+    return f"rtsp://{host or DEFAULT_BRIDGE_HOST}:{port}/{sanitize_rtsp_path(name, cam_id)}"

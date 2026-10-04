@@ -1,0 +1,430 @@
+"""Tuya Mobile SDK API client for Philips Avent."""
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import logging
+import time
+import uuid
+from dataclasses import dataclass
+from typing import Any
+
+import aiohttp
+
+try:
+    from .const import TUYA_API_URL, TUYA_DEFAULT_COUNTRY_CODE, TUYA_PACKAGE_NAME
+    from .redact import redact_secrets
+except ImportError:
+    from const import TUYA_API_URL, TUYA_DEFAULT_COUNTRY_CODE, TUYA_PACKAGE_NAME
+    from redact import redact_secrets
+
+_LOGGER = logging.getLogger(__name__)
+
+SIGN_PARAM_WHITELIST = frozenset([
+    "a", "v", "lat", "lon", "lang", "deviceId", "appVersion", "ttid",
+    "isH5", "h5Token", "os", "clientId", "postData", "time", "requestId",
+    "et", "n4h5", "sid", "chKey", "sp",
+])
+
+
+def _swap(s: str) -> str:
+    if len(s) != 32:
+        return s
+    return s[8:16] + s[0:8] + s[24:32] + s[16:24]
+
+
+@dataclass(frozen=True)
+class TuyaKeys:
+    """App-level Tuya Mobile SDK keys, entered once in the config flow.
+
+    They identify the Philips app, not the user, but they are kept out of this
+    public repository and live in the config entry instead.
+    """
+
+    app_key: str
+    signing_key: str
+    ch_key: str
+
+
+def normalize_keys(app_key: str, signing_key: str, ch_key: str) -> TuyaKeys | None:
+    """Strip pasted keys and sanity-check their shape; None when they look wrong.
+
+    Only the shape is checked here; whether Tuya accepts them shows up at login.
+    The signing key starts with the app's package name, which catches the usual
+    mistake of pasting the app key or something else into that field.
+    """
+    keys = TuyaKeys(app_key.strip(), "".join(signing_key.split()), ch_key.strip().lower())
+    if len(keys.app_key) != 20 or not keys.app_key.isalnum():
+        return None
+    if len(keys.ch_key) != 8 or any(c not in "0123456789abcdef" for c in keys.ch_key):
+        return None
+    if not keys.signing_key.startswith(f"{TUYA_PACKAGE_NAME}_"):
+        return None
+    return keys
+
+
+def keys_from_data(data) -> TuyaKeys | None:
+    """Keys stored in a config entry, or None for an entry that has none."""
+    try:
+        return normalize_keys(data["app_key"], data["signing_key"], data["ch_key"])
+    except (KeyError, TypeError, AttributeError):
+        return None
+
+
+def _sign(params: dict[str, str], signing_key: str) -> str:
+    filtered = {k: v for k, v in params.items() if k in SIGN_PARAM_WHITELIST and v}
+    if filtered.get("postData"):
+        md5 = hashlib.md5(filtered["postData"].encode()).hexdigest()
+        filtered["postData"] = _swap(md5)
+    param_str = "||".join(f"{k}={filtered[k]}" for k in sorted(filtered))
+    return hmac.new(
+        signing_key.encode(), param_str.encode(), hashlib.sha256
+    ).hexdigest()
+
+
+def new_device_id() -> str:
+    """A fresh phone device id, in the shape the Tuya SDK uses.
+
+    32 hex characters, which is what this integration has always sent: the old
+    `[:40]` slice suggested a longer value but a uuid4 hex is 32 to begin with,
+    so it never truncated anything.
+    """
+    return uuid.uuid4().hex
+
+
+class TuyaAPIError(Exception):
+    def __init__(self, code: str, message: str):
+        self.code = code
+        self.message = message
+        super().__init__(f"{code}: {message}")
+
+
+def classify_login_error(code: str, *, mfa: bool = False) -> str:
+    """Map a Tuya error code to a config-flow error key.
+
+    Unknown codes return "tuya_error" so the real Tuya code is surfaced to the
+    user (and logs) instead of being masked as a generic connection failure.
+    """
+    if mfa:
+        if "MFA" in code or "CODE" in code:
+            return "invalid_mfa"
+    elif "PASSWD" in code:
+        return "invalid_auth"
+    return "tuya_error"
+
+
+class PhilipsAventAPI:
+    """Async Tuya Mobile SDK client."""
+
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        keys: TuyaKeys,
+        sid: str = "",
+        api_url: str | None = None,
+        country_code: str = TUYA_DEFAULT_COUNTRY_CODE,
+        device_id: str | None = None,
+    ):
+        self._session = session
+        self.keys = keys
+        self.sid = sid
+        # The phone device id Tuya sees. A real phone keeps one, and so must we:
+        # a fresh value on every Home Assistant restart rewrote the bridge config
+        # file for no reason, which made the add-on restart every time and
+        # sometimes left it stopped (issue #73). The config entry persists it.
+        self.device_id = device_id or new_device_id()
+        # Both depend on which Tuya data center holds the account; the config
+        # flow resolves them at login and persists them in the config entry
+        # (issues #44, #58).
+        self.api_url = api_url or TUYA_API_URL
+        self.country_code = country_code
+
+    def _build_params(
+        self, action: str, version: str = "1.0", post_data: Any = None
+    ) -> dict[str, str]:
+        params = {
+            "a": action,
+            "v": version,
+            "time": str(int(time.time())),
+            "appVersion": "1.8.0",
+            "appRnVersion": "5.92",
+            "channel": "oem",
+            "chKey": self.keys.ch_key,
+            "clientId": self.keys.app_key,
+            "cp": "gzip",
+            "deviceCoreVersion": "6.7.0",
+            "deviceId": self.device_id,
+            "et": "0.0.1",
+            "nd": "1",
+            "lang": "en_US",
+            "os": "Android",
+            "osSystem": "14",
+            "platform": "ha_integration",
+            "requestId": str(uuid.uuid4()),
+            "sdkVersion": "6.7.0",
+            "sid": self.sid,
+            "timeZoneId": "Europe/Rome",
+            "ttid": f"sdk_international@{self.keys.app_key}",
+        }
+        if post_data is not None:
+            params["postData"] = (
+                json.dumps(post_data) if not isinstance(post_data, str) else post_data
+            )
+        params["sign"] = _sign(params, self.keys.signing_key)
+        return params
+
+    async def _call(
+        self, action: str, version: str = "1.0", post_data: Any = None,
+        extra_params: dict[str, str] | None = None,
+    ) -> dict:
+        params = self._build_params(action, version, post_data)
+        if extra_params:
+            params.update(extra_params)
+        async with self._session.post(
+            self.api_url,
+            data=params,
+            headers={
+                "User-Agent": "Thing-UA=APP/Android/1.8.0/SDK/6.7.0",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+        ) as resp:
+            result = await resp.json(content_type=None)
+        if not result.get("success"):
+            raise TuyaAPIError(
+                result.get("errorCode", "UNKNOWN"),
+                result.get("errorMsg", "Unknown error"),
+            )
+        return result.get("result")
+
+    # -- Login flow --------------------------------------------------------
+
+    async def get_rsa_token(self, email: str, country_code: str | None = None) -> dict:
+        return await self._call(
+            "thing.m.user.username.token.get",
+            "2.0",
+            {
+                "countryCode": country_code or self.country_code,
+                "username": email,
+                "isUid": False,
+            },
+        )
+
+    async def login_password(
+        self, email: str, encrypted_password: str, token: str,
+        country_code: str | None = None, mfa_code: str = "",
+    ) -> dict:
+        old_sid = self.sid
+        self.sid = ""
+        try:
+            return await self._call(
+                "thing.m.user.email.password.login",
+                "3.0",
+                {
+                    "countryCode": country_code or self.country_code,
+                    "email": email,
+                    "passwd": encrypted_password,
+                    "token": token,
+                    "ifencrypt": 1,
+                    "options": json.dumps({"group": 1, "mfaCode": mfa_code}),
+                },
+            )
+        except TuyaAPIError:
+            self.sid = old_sid
+            raise
+
+    async def trigger_mfa(
+        self, email: str, encrypted_password: str, token: str,
+        country_code: str | None = None,
+    ) -> dict:
+        old_sid = self.sid
+        self.sid = ""
+        try:
+            return await self._call(
+                "thing.m.user.username.mfa.code.get",
+                "1.0",
+                {
+                    "countryCode": country_code or self.country_code,
+                    "username": email,
+                    "passwd": encrypted_password,
+                    "token": token,
+                    "ifencrypt": 1,
+                    "options": json.dumps({"group": 1, "mfaCode": "null"}),
+                },
+            )
+        finally:
+            self.sid = old_sid
+
+    @staticmethod
+    def encrypt_password(password: str, pb_key: str) -> str:
+        from Crypto.Cipher import PKCS1_v1_5
+        from Crypto.PublicKey import RSA
+
+        md5_pass = hashlib.md5(password.encode()).hexdigest()
+        pem = f"-----BEGIN PUBLIC KEY-----\n{pb_key}\n-----END PUBLIC KEY-----"
+        rsa_key = RSA.import_key(pem)
+        cipher = PKCS1_v1_5.new(rsa_key)
+        return cipher.encrypt(md5_pass.encode()).hex()
+
+    # -- Device / Camera ---------------------------------------------------
+
+    async def get_user_info(self) -> dict:
+        return await self._call("smartlife.m.user.info.get")
+
+    async def get_homes(self) -> list:
+        return await self._call("m.life.home.space.list")
+
+    async def get_device(self, dev_id: str) -> dict:
+        return await self._call("tuya.m.device.get", post_data={"devId": dev_id})
+
+    async def set_dps(self, dev_id: str, dps: dict) -> dict:
+        return await self._call(
+            "tuya.m.device.dp.publish",
+            "1.0",
+            {"devId": dev_id, "gwId": dev_id, "dps": dps},
+        )
+
+    async def get_rssi(self, dev_id: str) -> dict:
+        return await self._call(
+            "tuya.m.device.upgrade.rssi.info.query",
+            post_data={"devId": dev_id},
+        )
+
+    async def get_rtc_config(self, dev_id: str) -> dict:
+        return await self._call(
+            "smartlife.m.rtc.config.get", post_data={"devId": dev_id}
+        )
+
+    async def discover_cameras(self) -> list[dict]:
+        """Find all IPC cameras in the account."""
+        cameras = []
+        seen_ids = set()
+
+        homes = []
+        try:
+            homes = await self.get_homes()
+            _LOGGER.debug("Found %d homes: %s", len(homes), redact_secrets(homes))
+        except TuyaAPIError as e:
+            _LOGGER.debug("Home list failed: %s", e)
+
+        for home in homes:
+            gid = str(home.get("gid", ""))
+            if not gid:
+                continue
+
+            # Strategy 1: room-based discovery
+            for api_version in ("2.0", "1.0"):
+                try:
+                    rooms = await self._call(
+                        "tuya.m.location.get",
+                        api_version,
+                        post_data={"gid": gid},
+                        extra_params={"gid": gid},
+                    )
+                    _LOGGER.debug("Rooms (v%s, gid=%s): %s", api_version, gid, redact_secrets(rooms))
+                    if isinstance(rooms, list):
+                        for room in rooms:
+                            for dev in room.get("deviceList", []):
+                                dev_id = dev.get("devId") or dev.get("deviceId")
+                                if dev_id and dev_id not in seen_ids:
+                                    seen_ids.add(dev_id)
+                                    cameras.append(dev)
+                                    _LOGGER.debug(
+                                        "Found device via rooms: %s (id=%s, category=%s)",
+                                        dev.get("name", dev.get("deviceName", "?")),
+                                        dev_id, dev.get("category", "?"),
+                                    )
+                    if cameras:
+                        break
+                except TuyaAPIError as e:
+                    _LOGGER.debug("Room discovery v%s failed for gid %s: %s", api_version, gid, e)
+
+            # Strategy 2: group device list per home (gid as form param)
+            if not cameras:
+                try:
+                    result = await self._call(
+                        "tuya.m.my.group.device.list",
+                        extra_params={"gid": gid},
+                    )
+                    _LOGGER.debug("Group device list for gid %s: %s", gid, redact_secrets(result))
+                    if isinstance(result, list):
+                        for dev in result:
+                            dev_id = dev.get("devId") or dev.get("deviceId")
+                            if dev_id and dev_id not in seen_ids:
+                                seen_ids.add(dev_id)
+                                cameras.append(dev)
+                                _LOGGER.debug(
+                                    "Found device via group list: %s (id=%s, category=%s)",
+                                    dev.get("name", dev.get("deviceName", "?")),
+                                    dev_id, dev.get("category", "?"),
+                                )
+                except TuyaAPIError as e:
+                    _LOGGER.debug("Group device list failed for gid %s: %s", gid, e)
+
+        if cameras:
+            _LOGGER.info("Discovered %d devices", len(cameras))
+            return cameras
+
+        # Strategy 3: tuya.m.my.group.device.relation.list
+        for home in homes:
+            gid = str(home.get("gid", ""))
+            if not gid:
+                continue
+            try:
+                result = await self._call(
+                    "tuya.m.my.group.device.relation.list",
+                    extra_params={"gid": gid},
+                )
+                _LOGGER.debug("Device relation list for gid %s: %s", gid, redact_secrets(result))
+                if isinstance(result, list):
+                    for dev in result:
+                        dev_id = dev.get("devId") or dev.get("deviceId") or dev.get("id")
+                        if dev_id and dev_id not in seen_ids:
+                            seen_ids.add(dev_id)
+                            cameras.append(dev)
+            except TuyaAPIError as e:
+                _LOGGER.debug("Device relation list failed for gid %s: %s", gid, e)
+
+        if cameras:
+            _LOGGER.info("Discovered %d devices via relation list", len(cameras))
+            return cameras
+
+        # Strategy 4: tuya.m.device.list.get
+        try:
+            result = await self._call("tuya.m.device.list.get")
+            _LOGGER.debug("Device list get: %s", redact_secrets(result))
+            if isinstance(result, list):
+                for dev in result:
+                    dev_id = dev.get("devId") or dev.get("deviceId")
+                    if dev_id and dev_id not in seen_ids:
+                        seen_ids.add(dev_id)
+                        cameras.append(dev)
+        except TuyaAPIError as e:
+            _LOGGER.debug("Device list get failed: %s", e)
+
+        if cameras:
+            _LOGGER.info("Discovered %d devices via device list", len(cameras))
+            return cameras
+
+        _LOGGER.warning("All device discovery strategies failed")
+        return cameras
+
+    # -- MQTT credentials --------------------------------------------------
+
+    def derive_mqtt_password(self, ecode: str) -> str:
+        md5_key = hashlib.md5(self.keys.signing_key.encode()).hexdigest()
+        full = hashlib.md5((md5_key + ecode).encode()).hexdigest()
+        return full[8:24]
+
+    def derive_mqtt_username(
+        self, sid: str, ecode: str, partner_identity: str
+    ) -> str:
+        app_key = self.keys.app_key
+        md5_appkey = hashlib.md5(app_key.encode()).hexdigest()
+        tail = hashlib.md5((md5_appkey + ecode).encode()).hexdigest()[-16:]
+        return f"{partner_identity}_v1_{app_key}_{self.keys.ch_key}_mb_{sid}{tail}"
+
+    @staticmethod
+    def derive_mqtt_client_id(uid: str, device_id: str) -> str:
+        uid_hash = hashlib.md5((uid + "sdkfasodifca").encode()).hexdigest()
+        return f"{TUYA_PACKAGE_NAME}_mb_{device_id}_{uid_hash}_DEFAULT"
