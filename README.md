@@ -16,7 +16,7 @@ Do tego polskie tłumaczenie kreatora konfiguracji.
 - detekcja ruchu i dźwięku (przełączniki + `binary_sensor` do automatyzacji),
 - tryb prywatności, opcjonalnie dźwięk dwukierunkowy.
 - **SenseIQ (nowość w tym forku):** oddech na minutę, obecność dziecka w łóżeczku, ruch na żywo,
-  faza snu (czuwanie / sen lekki / sen głęboki), czas snu i „w łóżeczku od”. Kamera wysyła te dane
+  faza snu (czuwanie / sen lekki / sen głęboki / poza łóżeczkiem), czas faktycznego snu i „w łóżeczku od”. Kamera wysyła te dane
   lokalnie przez LAN (DPS 3 i 4), więc działają tylko przy połączeniu LAN z nianią. Opis formatu: `senseiq.py`.
 
 „Motion Detected” to alarm ruchu z kamery (z opóźnieniem po stronie kamery i podtrzymaniem 30 s) —

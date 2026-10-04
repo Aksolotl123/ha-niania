@@ -11,8 +11,10 @@ never seen in diagnostics dumps:
   text and then base64. ``st`` is when the baby was put in bed (epoch seconds),
   ``sd`` the session length in seconds, ``css`` the current stage and ``cssd``
   how long it has lasted, ``ssd`` the finished stages in order as single-key
-  objects (``{"d": 2014}``). Stages: ``a`` awake, ``l`` light, ``d`` deep; ``o``
-  appears too and its meaning is not confirmed yet.
+  objects (``{"d": 2014}``). Stages: ``a`` awake, ``l`` light, ``d`` deep, ``o``
+  out of bed (the monitor shows "scanning crib"; ``css`` turns ``o`` with
+  ``cssd`` 0 the moment the baby is lifted out). The session stays open while
+  the baby is out and ``sd`` keeps counting, so it is not a sleep time.
 
 No Home Assistant imports here, so the unit tests can load it directly.
 """
@@ -31,7 +33,8 @@ SENSEIQ_FRESH_SECONDS = 60
 READING_STILL = "b"
 READING_MOVING = "m"
 
-SLEEP_STAGES = {"a": "awake", "l": "light", "d": "deep", "o": "other"}
+SLEEP_STAGES = {"a": "awake", "l": "light", "d": "deep", "o": "out"}
+ASLEEP_STAGES = ("light", "deep")
 
 
 @dataclass(frozen=True)
@@ -114,10 +117,19 @@ def parse_sleep(raw: Any) -> dict | None:
             code, seconds = next(iter(item.items()))
             if isinstance(seconds, (int, float)):
                 stages.append({"stage": sleep_stage_name(code), "seconds": int(seconds)})
+    stage = sleep_stage_name(data.get("css"))
+    stage_duration = data.get("cssd") if isinstance(data.get("cssd"), (int, float)) else None
+    duration = data.get("sd") if isinstance(data.get("sd"), (int, float)) else None
+    # The finished stages plus the current one make up the whole session.
+    timeline = [*stages, {"stage": stage, "seconds": int(stage_duration or 0)}]
+    asleep = sum(s["seconds"] for s in timeline if s["stage"] in ASLEEP_STAGES)
+    out = sum(s["seconds"] for s in timeline if s["stage"] == "out")
     return {
         "in_bed_since": data.get("st") if isinstance(data.get("st"), (int, float)) else None,
-        "duration": data.get("sd") if isinstance(data.get("sd"), (int, float)) else None,
-        "stage": sleep_stage_name(data.get("css")),
-        "stage_duration": data.get("cssd") if isinstance(data.get("cssd"), (int, float)) else None,
+        "duration": duration,
+        "asleep": asleep,
+        "in_bed": max(int(duration) - out, 0) if duration is not None else None,
+        "stage": stage,
+        "stage_duration": stage_duration,
         "stages": stages,
     }

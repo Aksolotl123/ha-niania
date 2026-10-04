@@ -140,6 +140,12 @@ class AventSleepStageSensor(_AventSenseIQSensor):
 
 
 class AventSleepDurationSensor(_AventSenseIQSensor):
+    """Time actually asleep (light + deep) in the current session.
+
+    The session length itself also counts awake time and time out of bed, which
+    made the value keep growing with an empty crib.
+    """
+
     _attr_device_class = SensorDeviceClass.DURATION
     _attr_native_unit_of_measurement = UnitOfTime.MINUTES
     _attr_icon = "mdi:timer-sand"
@@ -148,8 +154,19 @@ class AventSleepDurationSensor(_AventSenseIQSensor):
 
     @property
     def native_value(self) -> int | None:
-        seconds = self._sleep_value("duration")
+        seconds = self._sleep_value("asleep")
         return round(seconds / 60) if seconds is not None else None
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        sleep = self.coordinator.sleep
+        if not sleep:
+            return None
+        session, in_bed = sleep.get("duration"), sleep.get("in_bed")
+        return {
+            "session_min": round(session / 60) if session is not None else None,
+            "in_bed_min": round(in_bed / 60) if in_bed is not None else None,
+        }
 
 
 class AventInBedSinceSensor(_AventSenseIQSensor):
@@ -161,4 +178,6 @@ class AventInBedSinceSensor(_AventSenseIQSensor):
     @property
     def native_value(self) -> datetime | None:
         stamp = self._sleep_value("in_bed_since")
-        return datetime.fromtimestamp(stamp, tz=UTC) if stamp else None
+        if not stamp or self._sleep_value("stage") == "out":
+            return None
+        return datetime.fromtimestamp(stamp, tz=UTC)

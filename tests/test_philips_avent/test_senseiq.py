@@ -53,7 +53,7 @@ class TestSleep:
         assert sleep["stage_duration"] == 1082
         assert sleep["stages"] == [
             {"stage": "awake", "seconds": 302},
-            {"stage": "other", "seconds": 922},
+            {"stage": "out", "seconds": 922},
             {"stage": "deep", "seconds": 2014},
             {"stage": "light", "seconds": 143},
             {"stage": "deep", "seconds": 84},
@@ -61,6 +61,16 @@ class TestSleep:
         # Finished stages plus the current one add up to the session length.
         total = sum(s["seconds"] for s in sleep["stages"]) + sleep["stage_duration"]
         assert total == sleep["duration"]
+        # Asleep = deep + light, current light stage included; out of bed is not in bed.
+        assert sleep["asleep"] == 2014 + 143 + 84 + 1082
+        assert sleep["in_bed"] == 4547 - 922
+
+    def test_out_of_bed_stops_sleep_time(self):
+        payload = {"st": 1, "sd": 1000, "css": "o", "cssd": 0, "ssd": [{"l": 600}, {"a": 400}]}
+        sleep = parse_sleep(json.dumps(payload))
+        assert sleep["stage"] == "out"
+        assert sleep["asleep"] == 600
+        assert sleep["in_bed"] == 1000
 
     def test_plain_json_is_accepted(self):
         sleep = parse_sleep(json.dumps({"st": 1, "sd": 60, "css": "d", "cssd": 60, "ssd": []}))

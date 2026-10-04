@@ -99,7 +99,7 @@
           "awake": "Awake",
           "light": "Light sleep",
           "deep": "Deep sleep",
-          "other": "Other"
+          "out": "Out of bed"
         }
       }
     },
