@@ -69,6 +69,9 @@ DPS_DECIBEL_EVENT = "141"
 # family reports motion here instead of on DPS 250 (issues #61, #42); see
 # events.py for the payload. One slot holding the newest alarm, not a queue.
 DPS_ALARM_RECORD = "212"
+# SenseIQ, pushed over the LAN only (see senseiq.py): breathing and sleep session.
+DPS_SENSEIQ_BREATHING = "3"
+DPS_SENSEIQ_SLEEP = "4"
 
 LULLABY_TRACK_MAP = {
     3542154: ("Baa Baa Black Sheep", "lullabies"),

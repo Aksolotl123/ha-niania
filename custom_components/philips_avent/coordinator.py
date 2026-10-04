@@ -14,10 +14,17 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util.dt import utcnow
 
 from .api import PhilipsAventAPI, TuyaAPIError
-from .const import DPS_ALARM_RECORD, DPS_LULLABY_CONTROL, DPS_LULLABY_STATE
+from .const import (
+    DPS_ALARM_RECORD,
+    DPS_LULLABY_CONTROL,
+    DPS_LULLABY_STATE,
+    DPS_SENSEIQ_BREATHING,
+    DPS_SENSEIQ_SLEEP,
+)
 from .events import LULLABY_SETTLE_SECONDS, lullaby_state_settled, poll_should_stay_fast
 from .lan import TuyaLANClient
 from .payload import dps_delta, truncated_dps
+from .senseiq import SENSEIQ_FRESH_SECONDS, BreathingReading, parse_breathing, parse_sleep
 
 LULLABY_STATE_MAP = {"play": "playing", "pause": "stopping", "stop": "stopping"}
 
@@ -61,6 +68,10 @@ class PhilipsAventCoordinator(DataUpdateCoordinator):
         self._pending_lullaby_since: float | None = None
         self._lullaby_unsub = None
         self._rssi_refreshed_at = None
+        self.breathing: BreathingReading | None = None
+        self._breathing_at: float | None = None
+        self._breathing_expiry_unsub = None
+        self.sleep: dict | None = None
 
     async def start_lan(self) -> None:
         if not self._local_key:
@@ -75,6 +86,9 @@ class PhilipsAventCoordinator(DataUpdateCoordinator):
 
     async def stop_lan(self) -> None:
         self._cancel_pending_lullaby()
+        if self._breathing_expiry_unsub:
+            self._breathing_expiry_unsub()
+            self._breathing_expiry_unsub = None
         if self._lan_client:
             await self._lan_client.stop()
             self._lan_client = None
@@ -93,9 +107,53 @@ class PhilipsAventCoordinator(DataUpdateCoordinator):
             "LAN push for %s: %s", self.camera_name, truncated_dps(dps)
         )
 
+        self._store_senseiq(dps)
         dps = self._hold_lullaby_state(dps)
         merged = {**self.data, **dps}
         self.async_set_updated_data(merged)
+
+    @property
+    def breathing_age(self) -> int | None:
+        """Seconds since the last SenseIQ reading."""
+        if self._breathing_at is None:
+            return None
+        return round(time.monotonic() - self._breathing_at)
+
+    @property
+    def breathing_fresh(self) -> bool:
+        """Whether a SenseIQ reading arrived recently, i.e. the baby is in bed."""
+        return (
+            self._breathing_at is not None
+            and time.monotonic() - self._breathing_at <= SENSEIQ_FRESH_SECONDS
+        )
+
+    @callback
+    def _store_senseiq(self, dps: dict[str, Any]) -> None:
+        """Keep the SenseIQ pushes with their arrival time.
+
+        Freshness matters for breathing: the camera simply stops sending when the
+        baby leaves the zone, so the entities are refreshed once the last reading
+        has gone stale, without waiting for another push.
+        """
+        if DPS_SENSEIQ_BREATHING in dps:
+            reading = parse_breathing(dps[DPS_SENSEIQ_BREATHING])
+            if reading is not None:
+                self.breathing = reading
+                self._breathing_at = time.monotonic()
+                if self._breathing_expiry_unsub:
+                    self._breathing_expiry_unsub()
+                self._breathing_expiry_unsub = async_call_later(
+                    self.hass, SENSEIQ_FRESH_SECONDS + 1, self._breathing_expired
+                )
+        if DPS_SENSEIQ_SLEEP in dps:
+            sleep = parse_sleep(dps[DPS_SENSEIQ_SLEEP])
+            if sleep is not None:
+                self.sleep = sleep
+
+    @callback
+    def _breathing_expired(self, _now=None) -> None:
+        self._breathing_expiry_unsub = None
+        self.async_update_listeners()
 
     @callback
     def _hold_lullaby_state(self, dps: dict[str, Any]) -> dict[str, Any]:

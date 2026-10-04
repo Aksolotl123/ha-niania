@@ -92,6 +92,15 @@
       },
       "wifi_signal": {
         "name": "WiFi Signal"
+      },
+      "sleep_stage": {
+        "name": "Sleep Stage",
+        "state": {
+          "awake": "Awake",
+          "light": "Light sleep",
+          "deep": "Deep sleep",
+          "other": "Other"
+        }
       }
     },
     "switch": {

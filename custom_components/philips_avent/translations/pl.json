@@ -84,5 +84,18 @@
         }
       }
     }
+  },
+  "entity": {
+    "sensor": {
+      "sleep_stage": {
+        "name": "Faza snu",
+        "state": {
+          "awake": "Czuwanie",
+          "light": "Sen lekki",
+          "deep": "Sen głęboki",
+          "other": "Inne"
+        }
+      }
+    }
   }
 }

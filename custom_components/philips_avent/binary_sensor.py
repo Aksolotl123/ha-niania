@@ -41,6 +41,8 @@ async def async_setup_entry(
             AventLullabyPlaying(coordinator, cam_id),
             AventMotionDetected(coordinator, cam_id),
             AventSoundDetected(coordinator, cam_id),
+            AventInBed(coordinator, cam_id),
+            AventMovingNow(coordinator, cam_id),
         ])
     async_add_entities(entities)
 
@@ -226,3 +228,53 @@ class AventSoundDetected(CoordinatorEntity, BinarySensorEntity):
     async def async_will_remove_from_hass(self) -> None:
         if self._clear_unsub:
             self._clear_unsub()
+
+
+class AventInBed(CoordinatorEntity, BinarySensorEntity):
+    """Baby in the SenseIQ zone: on while breathing/motion readings keep arriving."""
+
+    _attr_has_entity_name = True
+    _attr_name = "In Bed"
+    _attr_icon = "mdi:bed"
+    _attr_device_class = BinarySensorDeviceClass.OCCUPANCY
+
+    def __init__(self, coordinator: PhilipsAventCoordinator, cam_id: str):
+        super().__init__(coordinator)
+        self._cam_id = cam_id
+        self._attr_unique_id = f"{cam_id}_in_bed"
+        self._attr_device_info = build_device_info(coordinator, cam_id)
+
+    @property
+    def is_on(self) -> bool | None:
+        reading = self.coordinator.breathing
+        if reading is None:
+            return None
+        return self.coordinator.breathing_fresh and reading.in_bed
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        reading = self.coordinator.breathing
+        if reading is None:
+            return None
+        return {"reading": reading.reading, "reading_age_s": self.coordinator.breathing_age}
+
+
+class AventMovingNow(CoordinatorEntity, BinarySensorEntity):
+    """Live SenseIQ motion, unlike the delayed and latched motion alert."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Moving"
+    _attr_device_class = BinarySensorDeviceClass.MOTION
+
+    def __init__(self, coordinator: PhilipsAventCoordinator, cam_id: str):
+        super().__init__(coordinator)
+        self._cam_id = cam_id
+        self._attr_unique_id = f"{cam_id}_moving"
+        self._attr_device_info = build_device_info(coordinator, cam_id)
+
+    @property
+    def is_on(self) -> bool | None:
+        reading = self.coordinator.breathing
+        if reading is None:
+            return None
+        return self.coordinator.breathing_fresh and reading.moving
