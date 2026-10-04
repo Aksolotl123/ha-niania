@@ -6,7 +6,9 @@ never seen in diagnostics dumps:
 
 - DPS 3, every one to ten seconds while the baby is in the SenseIQ zone:
   ``{"r": "b", "br": 35}``. ``r`` is the reading, ``b`` (still, breathing rate
-  measured) or ``m`` (moving, no rate), and ``br`` is breaths per minute.
+  measured), ``m`` (moving, no rate) or ``o`` (out of bed, sent once, e.g. on a
+  new LAN connection; after that the pushes simply stop), and ``br`` is breaths
+  per minute.
 - DPS 4, about once a minute: the current sleep session as JSON, encoded as hex
   text and then base64. ``st`` is when the baby was put in bed (epoch seconds),
   ``sd`` the session length in seconds, ``css`` the current stage and ``cssd``
@@ -32,6 +34,7 @@ SENSEIQ_FRESH_SECONDS = 60
 
 READING_STILL = "b"
 READING_MOVING = "m"
+READING_OUT = "o"
 
 SLEEP_STAGES = {"a": "awake", "l": "light", "d": "deep", "o": "out"}
 ASLEEP_STAGES = ("light", "deep")

@@ -34,6 +34,12 @@ class TestBreathing:
         assert not reading.moving
         assert not reading.in_bed
 
+    def test_out_of_bed_reading(self):
+        reading = parse_breathing('{"r":"o","br":0}')
+        assert not reading.in_bed
+        assert not reading.moving
+        assert reading.breathing_rate is None
+
     def test_still_and_moving_mean_in_bed(self):
         assert parse_breathing('{"r":"b","br":30}').in_bed
         assert parse_breathing('{"r":"m","br":0}').in_bed
