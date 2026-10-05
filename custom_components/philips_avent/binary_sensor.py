@@ -24,7 +24,12 @@ from .const import (
 )
 from .coordinator import PhilipsAventCoordinator
 from .entity import build_device_info
-from .events import is_new_event, motion_event_timestamp, sound_event_timestamp
+from .events import (
+    cry_event_timestamp,
+    is_new_event,
+    motion_event_timestamp,
+    sound_event_timestamp,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,6 +46,7 @@ async def async_setup_entry(
             AventLullabyPlaying(coordinator, cam_id),
             AventMotionDetected(coordinator, cam_id),
             AventSoundDetected(coordinator, cam_id),
+            AventCryDetected(coordinator, cam_id),
             AventInBed(coordinator, cam_id),
             AventMovingNow(coordinator, cam_id),
         ])
@@ -207,6 +213,76 @@ class AventSoundDetected(CoordinatorEntity, BinarySensorEntity):
             self._last_alarm_timestamp = timestamp
             return True
 
+        if timestamp is not None and self._last_alarm_timestamp is None:
+            self._last_alarm_timestamp = timestamp
+        return False
+
+    @callback
+    def _schedule_clear(self) -> None:
+        if self._clear_unsub:
+            self._clear_unsub()
+        self._clear_unsub = async_call_later(
+            self.hass, ALERT_CLEAR_SECONDS, self._clear_alert
+        )
+
+    @callback
+    def _clear_alert(self, _now=None) -> None:
+        self._is_on = False
+        self._clear_unsub = None
+        self.async_write_ha_state()
+
+    async def async_will_remove_from_hass(self) -> None:
+        if self._clear_unsub:
+            self._clear_unsub()
+
+
+class AventCryDetected(CoordinatorEntity, BinarySensorEntity):
+    """The monitor's cry detection, apart from any other noise.
+
+    The SCD923 posts it to the DPS 212 alarm record as `ipc_baby_cry` (seen
+    2026-10-05), often without touching DPS 141, so it is the only trace a cry
+    leaves. Sound Detected fires on it too; this sensor fires on nothing else,
+    which lets an automation treat a recognised cry as more urgent than a noise.
+    Auto-clears after ALERT_CLEAR_SECONDS.
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Cry Detected"
+    _attr_icon = "mdi:emoticon-cry-outline"
+    _attr_device_class = BinarySensorDeviceClass.SOUND
+
+    def __init__(self, coordinator: PhilipsAventCoordinator, cam_id: str):
+        super().__init__(coordinator)
+        self._cam_id = cam_id
+        self._attr_unique_id = f"{cam_id}_cry_detected"
+        self._attr_device_info = build_device_info(coordinator, cam_id)
+        self._is_on = False
+        self._clear_unsub = None
+        self._last_alarm_timestamp: float | None = None
+
+    @property
+    def is_on(self) -> bool:
+        return self._is_on
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        if self._cry_reported():
+            self._is_on = True
+            self._schedule_clear()
+        self.async_write_ha_state()
+
+    @callback
+    def _cry_reported(self) -> bool:
+        dps = self.coordinator.data or {}
+        timestamp = cry_event_timestamp(dps.get(DPS_ALARM_RECORD))
+        if is_new_event(timestamp, self._last_alarm_timestamp, time.time()):
+            self._last_alarm_timestamp = timestamp
+            _LOGGER.debug(
+                "Cry alarm record for %s at %s", self.coordinator.camera_name, timestamp
+            )
+            return True
+
+        # Remember a stale record so it cannot fire later as if it were new.
         if timestamp is not None and self._last_alarm_timestamp is None:
             self._last_alarm_timestamp = timestamp
         return False

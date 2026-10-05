@@ -21,6 +21,8 @@ Do tego polskie tłumaczenie kreatora konfiguracji.
 
 „Motion Detected” to alarm ruchu z kamery (z opóźnieniem po stronie kamery i podtrzymaniem 30 s) —
 nadaje się do powiadomień. „Moving” to ruch na żywo z SenseIQ, odświeżany co kilka sekund.
+„Cry Detected” to rozpoznany przez kamerę płacz (alarm `ipc_baby_cry`), w odróżnieniu od dowolnego
+hałasu w „Sound Detected” (który też reaguje na płacz).
 
 ## Instalacja
 

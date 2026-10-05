@@ -12,6 +12,7 @@ from events import (
     EVENT_MAX_AGE_SECONDS,
     LULLABY_SETTLE_SECONDS,
     KNOWN_COMMANDS,
+    cry_event_timestamp,
     decode_event_payload,
     event_timestamp,
     is_new_event,
@@ -193,6 +194,17 @@ class TestScd923BabyCry:
 
     def test_baby_cry_is_not_reported_as_unmapped(self):
         assert "ipc_baby_cry" in KNOWN_COMMANDS
+
+    def test_baby_cry_fires_the_cry_sensor(self):
+        assert cry_event_timestamp(self.PAYLOAD) == 1700000000
+
+    def test_plain_noise_does_not_fire_the_cry_sensor(self):
+        assert cry_event_timestamp(SCD953_SOUND) is None
+        assert cry_event_timestamp(encoded({"cmd": "ipc_motion", "time": 5})) is None
+
+    def test_cleared_cry_does_not_fire(self):
+        payload = encoded({"cmd": "ipc_baby_cry", "alarm": False, "time": 5})
+        assert cry_event_timestamp(payload) is None
 
 
 class TestFreshnessWindowCoversTheSlowPoll:

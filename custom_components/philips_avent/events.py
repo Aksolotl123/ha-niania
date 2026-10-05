@@ -58,7 +58,11 @@ SOUND_COMMANDS = frozenset(
     }
 )
 
-KNOWN_COMMANDS = MOTION_COMMANDS | SOUND_COMMANDS
+# The monitor's own cry detection, a narrower signal than any noise: these also
+# count as sound above, and additionally drive the dedicated cry sensor.
+CRY_COMMANDS = frozenset({"ipc_baby_cry", "ipc_cry"})
+
+KNOWN_COMMANDS = MOTION_COMMANDS | SOUND_COMMANDS | CRY_COMMANDS
 
 # Alarm commands already reported, so an unmapped one is logged once per run
 # instead of on every poll.
@@ -152,6 +156,11 @@ def motion_event_timestamp(raw: object) -> float | None:
 def sound_event_timestamp(raw: object) -> float | None:
     """Timestamp of a sound alarm carried in a DPS value."""
     return alarm_event_timestamp(raw, SOUND_COMMANDS)
+
+
+def cry_event_timestamp(raw: object) -> float | None:
+    """Timestamp of a cry detection alarm carried in a DPS value (SCD923 DPS 212)."""
+    return alarm_event_timestamp(raw, CRY_COMMANDS)
 
 
 def poll_should_stay_fast(lan_connected: bool, has_alarm_record: bool) -> bool:
