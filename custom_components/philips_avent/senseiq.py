@@ -13,10 +13,14 @@ never seen in diagnostics dumps:
   text and then base64. ``st`` is when the baby was put in bed (epoch seconds),
   ``sd`` the session length in seconds, ``css`` the current stage and ``cssd``
   how long it has lasted, ``ssd`` the finished stages in order as single-key
-  objects (``{"d": 2014}``). Stages: ``a`` awake, ``l`` light, ``d`` deep, ``o``
-  out of bed (the monitor shows "scanning crib"; ``css`` turns ``o`` with
-  ``cssd`` 0 the moment the baby is lifted out). The session stays open while
-  the baby is out and ``sd`` keeps counting, so it is not a sleep time.
+  objects (``{"d": 2014}``). Stages: ``l`` light, ``d`` deep, ``a`` and ``n``
+  movement, ``o`` out of bed (the monitor shows "scanning crib"; ``css`` turns
+  ``o`` with ``cssd`` 0 the moment the baby is lifted out). The session stays
+  open while the baby is out and ``sd`` keeps counting, so it is not a sleep
+  time. The Philips app knows only deep sleep, light sleep and movement, and
+  shows both ``a`` (minutes, e.g. while being put down) and ``n`` (short bursts
+  between light sleep while settling) as movement; what tells them apart is
+  not known, so the raw code is kept as ``stage_code``.
 
 No Home Assistant imports here, so the unit tests can load it directly.
 """
@@ -36,7 +40,7 @@ READING_STILL = "b"
 READING_MOVING = "m"
 READING_OUT = "o"
 
-SLEEP_STAGES = {"a": "awake", "l": "light", "d": "deep", "o": "out"}
+SLEEP_STAGES = {"a": "movement", "n": "movement", "l": "light", "d": "deep", "o": "out"}
 ASLEEP_STAGES = ("light", "deep")
 
 
@@ -62,6 +66,22 @@ class BreathingReading:
         if self.reading == READING_STILL and self.rate:
             return self.rate
         return None
+
+
+def in_bed_now(
+    in_bed_at: float | None, sleep_at: float | None, out_of_bed: bool, now: float
+) -> bool:
+    """In bed while still/moving readings keep coming (times are monotonic seconds).
+
+    ``in_bed_at`` is the last still/moving reading, so a lone out-of-bed reading
+    between them changes nothing; a sleep push newer than that reading which
+    says the crib is empty ends it at once.
+    """
+    if in_bed_at is None:
+        return False
+    if out_of_bed and sleep_at is not None and sleep_at > in_bed_at:
+        return False
+    return now - in_bed_at <= SENSEIQ_FRESH_SECONDS
 
 
 def _as_dict(raw: Any) -> dict | None:
@@ -133,6 +153,7 @@ def parse_sleep(raw: Any) -> dict | None:
         "asleep": asleep,
         "in_bed": max(int(duration) - out, 0) if duration is not None else None,
         "stage": stage,
+        "stage_code": data.get("css") if isinstance(data.get("css"), str) else None,
         "stage_duration": stage_duration,
         "stages": stages,
     }

@@ -2,7 +2,14 @@
 import base64
 import json
 
-from senseiq import BreathingReading, parse_breathing, parse_sleep, sleep_stage_name
+from senseiq import (
+    SENSEIQ_FRESH_SECONDS,
+    BreathingReading,
+    in_bed_now,
+    parse_breathing,
+    parse_sleep,
+    sleep_stage_name,
+)
 
 # A DPS 4 value as pushed by an SCD923 (base64 of hex of JSON).
 SLEEP_PUSH = (
@@ -56,9 +63,10 @@ class TestSleep:
         assert sleep["in_bed_since"] == 1791123989
         assert sleep["duration"] == 4547
         assert sleep["stage"] == "light"
+        assert sleep["stage_code"] == "l"
         assert sleep["stage_duration"] == 1082
         assert sleep["stages"] == [
-            {"stage": "awake", "seconds": 302},
+            {"stage": "movement", "seconds": 302},
             {"stage": "out", "seconds": 922},
             {"stage": "deep", "seconds": 2014},
             {"stage": "light", "seconds": 143},
@@ -83,6 +91,16 @@ class TestSleep:
         assert sleep["stage"] == "deep"
         assert sleep["stages"] == []
 
+    def test_both_movement_codes(self):
+        # The Philips app shows "a" and "n" alike as movement; neither is sleep.
+        payload = {"st": 1, "sd": 200, "css": "n", "cssd": 20,
+                   "ssd": [{"a": 60}, {"l": 97}, {"n": 23}]}
+        sleep = parse_sleep(json.dumps(payload))
+        assert sleep["stage"] == "movement"
+        assert sleep["stage_code"] == "n"
+        assert [s["stage"] for s in sleep["stages"]] == ["movement", "light", "movement"]
+        assert sleep["asleep"] == 97
+
     def test_unknown_stage_code_is_passed_through(self):
         assert sleep_stage_name("z") == "z"
         assert sleep_stage_name(None) is None
@@ -91,3 +109,24 @@ class TestSleep:
         assert parse_sleep("@@@") is None
         assert parse_sleep(base64.b64encode(b"zz").decode()) is None
         assert parse_sleep(None) is None
+
+
+class TestInBed:
+    def test_no_reading_yet(self):
+        assert not in_bed_now(None, None, False, 100.0)
+
+    def test_fresh_reading(self):
+        assert in_bed_now(100.0, None, False, 100.0 + SENSEIQ_FRESH_SECONDS)
+
+    def test_stale_reading(self):
+        assert not in_bed_now(100.0, None, False, 100.0 + SENSEIQ_FRESH_SECONDS + 1)
+
+    def test_empty_crib_push_after_reading_ends_it(self):
+        assert not in_bed_now(100.0, 105.0, True, 106.0)
+
+    def test_empty_crib_push_before_reading_is_stale(self):
+        # Put back in bed: readings resume before the next sleep push.
+        assert in_bed_now(110.0, 105.0, True, 111.0)
+
+    def test_sleeping_push_after_reading_keeps_it(self):
+        assert in_bed_now(100.0, 105.0, False, 106.0)

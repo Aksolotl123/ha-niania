@@ -150,13 +150,17 @@ class AventSleepStageSensor(_AventSenseIQSensor):
         sleep = self.coordinator.sleep
         if not sleep:
             return None
-        return {"stage_duration_s": sleep.get("stage_duration"), "stages": sleep.get("stages")}
+        return {
+            "stage_code": sleep.get("stage_code"),
+            "stage_duration_s": sleep.get("stage_duration"),
+            "stages": sleep.get("stages"),
+        }
 
 
 class AventSleepDurationSensor(_AventSenseIQSensor):
     """Time actually asleep (light + deep) in the current session.
 
-    The session length itself also counts awake time and time out of bed, which
+    The session length itself also counts movement and time out of bed, which
     made the value keep growing with an empty crib.
     """
 

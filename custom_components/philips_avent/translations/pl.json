@@ -90,7 +90,7 @@
       "sleep_stage": {
         "name": "Faza snu",
         "state": {
-          "awake": "Czuwanie",
+          "movement": "Ruch",
           "light": "Sen lekki",
           "deep": "Sen głęboki",
           "out": "Poza łóżeczkiem"

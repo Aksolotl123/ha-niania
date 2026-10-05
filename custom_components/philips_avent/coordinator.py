@@ -24,7 +24,13 @@ from .const import (
 from .events import LULLABY_SETTLE_SECONDS, lullaby_state_settled, poll_should_stay_fast
 from .lan import TuyaLANClient
 from .payload import dps_delta, truncated_dps
-from .senseiq import SENSEIQ_FRESH_SECONDS, BreathingReading, parse_breathing, parse_sleep
+from .senseiq import (
+    SENSEIQ_FRESH_SECONDS,
+    BreathingReading,
+    in_bed_now,
+    parse_breathing,
+    parse_sleep,
+)
 
 LULLABY_STATE_MAP = {"play": "playing", "pause": "stopping", "stop": "stopping"}
 
@@ -70,11 +76,14 @@ class PhilipsAventCoordinator(DataUpdateCoordinator):
         self._rssi_refreshed_at = None
         self.breathing: BreathingReading | None = None
         self._breathing_at: float | None = None
+        # Last still/moving reading: a lone "o" while moving must not empty the bed.
+        self._in_bed_at: float | None = None
         # Last measured rate, held through movement so the history stays continuous.
         self.last_breathing_rate: int | None = None
         self._last_breathing_rate_at: float | None = None
         self._breathing_expiry_unsub = None
         self.sleep: dict | None = None
+        self._sleep_at: float | None = None
 
     async def start_lan(self) -> None:
         if not self._local_key:
@@ -146,6 +155,18 @@ class PhilipsAventCoordinator(DataUpdateCoordinator):
             and time.monotonic() - self._breathing_at <= SENSEIQ_FRESH_SECONDS
         )
 
+    @property
+    def in_bed(self) -> bool:
+        """Whether a still/moving reading arrived recently.
+
+        While the baby moves the camera sometimes sends a single out-of-bed
+        reading and then carries on with still/moving ones a few seconds later,
+        which made In Bed blink off. Only the still/moving readings count, so a
+        real exit shows once they stop (at most SENSEIQ_FRESH_SECONDS), or right
+        away when a newer sleep session push says the crib is empty.
+        """
+        return in_bed_now(self._in_bed_at, self._sleep_at, self.out_of_bed, time.monotonic())
+
     @callback
     def _store_senseiq(self, dps: dict[str, Any]) -> None:
         """Keep the SenseIQ pushes with their arrival time.
@@ -167,6 +188,8 @@ class PhilipsAventCoordinator(DataUpdateCoordinator):
                     self._last_breathing_rate_at = now
                 self.breathing = reading
                 self._breathing_at = now
+                if reading.in_bed:
+                    self._in_bed_at = now
                 if self._breathing_expiry_unsub:
                     self._breathing_expiry_unsub()
                 self._breathing_expiry_unsub = async_call_later(
@@ -176,6 +199,7 @@ class PhilipsAventCoordinator(DataUpdateCoordinator):
             sleep = parse_sleep(dps[DPS_SENSEIQ_SLEEP])
             if sleep is not None:
                 self.sleep = sleep
+                self._sleep_at = time.monotonic()
 
     @callback
     def _breathing_expired(self, _now=None) -> None:

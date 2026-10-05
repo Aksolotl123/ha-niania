@@ -96,7 +96,7 @@
       "sleep_stage": {
         "name": "Sleep Stage",
         "state": {
-          "awake": "Awake",
+          "movement": "Movement",
           "light": "Light sleep",
           "deep": "Deep sleep",
           "out": "Out of bed"

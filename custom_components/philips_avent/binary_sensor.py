@@ -249,7 +249,7 @@ class AventInBed(CoordinatorEntity, BinarySensorEntity):
         reading = self.coordinator.breathing
         if reading is None:
             return False if self.coordinator.out_of_bed else None
-        return self.coordinator.breathing_fresh and reading.in_bed
+        return self.coordinator.in_bed
 
     @property
     def extra_state_attributes(self) -> dict | None:
