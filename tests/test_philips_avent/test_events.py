@@ -169,6 +169,32 @@ class TestRealSoundPayloadFromIssue42:
         assert sound_event_timestamp(encoded({"cmd": "ipc_cry", "time": 5})) == 5
 
 
+class TestScd923BabyCry:
+    """The SCD923 cry alarm in DPS 212 (2026-10-05), with anonymised values."""
+
+    PAYLOAD = encoded(
+        {
+            "v": "4.0",
+            "bucket": "ty-eu-storage00",
+            "cmd": "ipc_baby_cry",
+            "type": "image",
+            "with": "resource",
+            "alarm": True,
+            "time": 1700000000,
+            "files": [["/example/unify/1700000002.jpeg", "0000000000000000"]],
+        }
+    )
+
+    def test_baby_cry_fires_the_sound_sensor(self):
+        assert sound_event_timestamp(self.PAYLOAD) == 1700000000
+
+    def test_baby_cry_does_not_fire_the_motion_sensor(self):
+        assert motion_event_timestamp(self.PAYLOAD) is None
+
+    def test_baby_cry_is_not_reported_as_unmapped(self):
+        assert "ipc_baby_cry" in KNOWN_COMMANDS
+
+
 class TestFreshnessWindowCoversTheSlowPoll:
     """A real alarm must survive the gap between two cloud polls (#42).
 

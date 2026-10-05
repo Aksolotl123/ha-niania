@@ -42,8 +42,20 @@ MOTION_COMMANDS = frozenset({"ipc_motion", "ipc_move", "motion"})
 # diagnostics on #42. Until it was listed here the sound sensor stayed off while
 # the Philips app notified. A cry is a sound alert on a baby monitor, so
 # `ipc_cry` belongs here too.
+# `ipc_baby_cry` is the SCD923 cry detection alarm (DPS 12 "Cry alert"), seen in
+# DPS 212 on 2026-10-05 with the same shape as `ipc_bang`. A cry does not always
+# set DPS 141 (`decibel_upload`), so without it a crying baby could leave the
+# sound sensor off.
 SOUND_COMMANDS = frozenset(
-    {"ipc_bang", "ipc_cry", "ipc_sound", "ipc_decibel", "sound", "decibel"}
+    {
+        "ipc_bang",
+        "ipc_cry",
+        "ipc_baby_cry",
+        "ipc_sound",
+        "ipc_decibel",
+        "sound",
+        "decibel",
+    }
 )
 
 KNOWN_COMMANDS = MOTION_COMMANDS | SOUND_COMMANDS
