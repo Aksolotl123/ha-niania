@@ -21,6 +21,7 @@ from .lan_policy import (
     should_reconnect,
     version_candidates,
 )
+from .redact import mask_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,6 +41,8 @@ class TuyaLANClient:
     ) -> None:
         self._hass = hass
         self._device_id = device_id
+        # The device id is only ever logged masked.
+        self._log_id = mask_id(device_id)
         self._local_key = local_key
         self._on_dps_update = on_dps_update
         self._device: tinytuya.Device | None = None
@@ -118,7 +121,7 @@ class TuyaLANClient:
             if device:
                 if version != self._version:
                     _LOGGER.info(
-                        "LAN session with %s speaks protocol %s", self._device_id, version
+                        "LAN session with %s speaks protocol %s", self._log_id, version
                     )
                 self._version = version
                 return device
@@ -127,35 +130,35 @@ class TuyaLANClient:
     async def _connect(self) -> bool:
         # Try cached IP first (direct TCP, no broadcast needed)
         if self._ip:
-            _LOGGER.debug("Trying direct LAN connection to %s at %s", self._device_id, self._ip)
+            _LOGGER.debug("Trying direct LAN connection to %s at %s", self._log_id, self._ip)
             device = await self._connect_at_any_version(self._ip)
             if device:
                 self._device = device
                 self.connected = True
-                _LOGGER.info("LAN reconnected to %s at %s", self._device_id, self._ip)
+                _LOGGER.info("LAN reconnected to %s at %s", self._log_id, self._ip)
                 return True
             self._ip = None
 
         # Scan for device IP
-        _LOGGER.debug("Scanning LAN for device %s", self._device_id)
+        _LOGGER.debug("Scanning LAN for device %s", self._log_id)
         self._ip, announced = await self._discover_device()
         if announced is not None and announced != self._announced_version:
             _LOGGER.debug(
-                "Device %s announces protocol %s", self._device_id, announced
+                "Device %s announces protocol %s", self._log_id, announced
             )
             self._announced_version = announced
         if not self._ip:
-            _LOGGER.warning("Device %s not found on LAN", self._device_id)
+            _LOGGER.warning("Device %s not found on LAN", self._log_id)
             return False
 
         device = await self._connect_at_any_version(self._ip)
         if device:
             self._device = device
             self.connected = True
-            _LOGGER.info("LAN connected to %s at %s", self._device_id, self._ip)
+            _LOGGER.info("LAN connected to %s at %s", self._log_id, self._ip)
             return True
 
-        _LOGGER.debug("LAN connection failed for %s at %s", self._device_id, self._ip)
+        _LOGGER.debug("LAN connection failed for %s at %s", self._log_id, self._ip)
         self._ip = None
         return False
 

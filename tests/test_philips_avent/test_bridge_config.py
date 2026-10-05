@@ -11,6 +11,7 @@ project convention (see ``conftest.py``): the full path
 — a runtime dependency we deliberately keep out of unit tests.
 """
 
+import base64
 import json
 
 from payload import (
@@ -201,12 +202,24 @@ class TestDpsDelta:
         # An alert DPS clearing is a change worth seeing in the log.
         assert dps_delta({"141": "decibel_upload"}, {"141": ""}) == {"141": ""}
 
-    def test_long_alarm_record_is_cut_but_readable(self):
+    def test_long_value_is_cut_but_readable(self):
         record = "e" * 900
-        out = dps_delta({}, {"212": record})["212"]
+        out = dps_delta({}, {"185": record})["185"]
         assert out.startswith("e" * 300)
         assert "+600 chars" in out
         assert len(out) < 400
+
+    def test_alarm_record_is_decoded_without_its_snapshot_reference(self):
+        record = base64.b64encode(json.dumps({
+            "v": "4.0", "cmd": "ipc_bang", "alarm": True, "time": 1783686591,
+            "files": [["fake-bucket", "/fake/snapshot.jpeg", "fakeencryptkey"]],
+        }).encode()).decode()
+        out = dps_delta({}, {"212": record})["212"]
+        assert out["cmd"] == "ipc_bang"
+        assert out["files"] == "**REDACTED**"
+        assert "fake" not in repr(out)
+        pushed = truncated_dps({"212": record})["212"]
+        assert "fake" not in repr(pushed)
 
     def test_short_values_are_untouched(self):
         assert dps_delta({}, {"201": "play"}) == {"201": "play"}

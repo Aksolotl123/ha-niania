@@ -7,7 +7,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
-from .redact import redact_secrets
+from .redact import redact_dps, redact_secrets
 
 
 async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
@@ -23,7 +23,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
     for cam_id, coordinator in coordinators.items():
         diag["devices"][cam_id] = {
             "name": coordinator.camera_name,
-            "dps": coordinator.data,
+            "dps": redact_dps(coordinator.data),
             "lan_connected": coordinator.lan_connected,
             "update_interval": str(coordinator.update_interval),
             "rssi": coordinator.rssi,

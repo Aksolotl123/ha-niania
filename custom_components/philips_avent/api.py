@@ -14,10 +14,10 @@ import aiohttp
 
 try:
     from .const import TUYA_API_URL, TUYA_DEFAULT_COUNTRY_CODE, TUYA_PACKAGE_NAME
-    from .redact import redact_secrets
+    from .redact import mask_id, redact_secrets
 except ImportError:
     from const import TUYA_API_URL, TUYA_DEFAULT_COUNTRY_CODE, TUYA_PACKAGE_NAME
-    from redact import redact_secrets
+    from redact import mask_id, redact_secrets
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -321,7 +321,7 @@ class PhilipsAventAPI:
                         post_data={"gid": gid},
                         extra_params={"gid": gid},
                     )
-                    _LOGGER.debug("Rooms (v%s, gid=%s): %s", api_version, gid, redact_secrets(rooms))
+                    _LOGGER.debug("Rooms (v%s, gid=%s): %s", api_version, mask_id(gid), redact_secrets(rooms))
                     if isinstance(rooms, list):
                         for room in rooms:
                             for dev in room.get("deviceList", []):
@@ -332,12 +332,12 @@ class PhilipsAventAPI:
                                     _LOGGER.debug(
                                         "Found device via rooms: %s (id=%s, category=%s)",
                                         dev.get("name", dev.get("deviceName", "?")),
-                                        dev_id, dev.get("category", "?"),
+                                        mask_id(dev_id), dev.get("category", "?"),
                                     )
                     if cameras:
                         break
                 except TuyaAPIError as e:
-                    _LOGGER.debug("Room discovery v%s failed for gid %s: %s", api_version, gid, e)
+                    _LOGGER.debug("Room discovery v%s failed for gid %s: %s", api_version, mask_id(gid), e)
 
             # Strategy 2: group device list per home (gid as form param)
             if not cameras:
@@ -346,7 +346,7 @@ class PhilipsAventAPI:
                         "tuya.m.my.group.device.list",
                         extra_params={"gid": gid},
                     )
-                    _LOGGER.debug("Group device list for gid %s: %s", gid, redact_secrets(result))
+                    _LOGGER.debug("Group device list for gid %s: %s", mask_id(gid), redact_secrets(result))
                     if isinstance(result, list):
                         for dev in result:
                             dev_id = dev.get("devId") or dev.get("deviceId")
@@ -356,10 +356,10 @@ class PhilipsAventAPI:
                                 _LOGGER.debug(
                                     "Found device via group list: %s (id=%s, category=%s)",
                                     dev.get("name", dev.get("deviceName", "?")),
-                                    dev_id, dev.get("category", "?"),
+                                    mask_id(dev_id), dev.get("category", "?"),
                                 )
                 except TuyaAPIError as e:
-                    _LOGGER.debug("Group device list failed for gid %s: %s", gid, e)
+                    _LOGGER.debug("Group device list failed for gid %s: %s", mask_id(gid), e)
 
         if cameras:
             _LOGGER.info("Discovered %d devices", len(cameras))
@@ -375,7 +375,7 @@ class PhilipsAventAPI:
                     "tuya.m.my.group.device.relation.list",
                     extra_params={"gid": gid},
                 )
-                _LOGGER.debug("Device relation list for gid %s: %s", gid, redact_secrets(result))
+                _LOGGER.debug("Device relation list for gid %s: %s", mask_id(gid), redact_secrets(result))
                 if isinstance(result, list):
                     for dev in result:
                         dev_id = dev.get("devId") or dev.get("deviceId") or dev.get("id")
@@ -383,7 +383,7 @@ class PhilipsAventAPI:
                             seen_ids.add(dev_id)
                             cameras.append(dev)
             except TuyaAPIError as e:
-                _LOGGER.debug("Device relation list failed for gid %s: %s", gid, e)
+                _LOGGER.debug("Device relation list failed for gid %s: %s", mask_id(gid), e)
 
         if cameras:
             _LOGGER.info("Discovered %d devices via relation list", len(cameras))

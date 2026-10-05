@@ -8,6 +8,11 @@ from __future__ import annotations
 import json
 import os
 
+try:
+    from .redact import redact_dps
+except ImportError:
+    from redact import redact_dps
+
 BRIDGE_CONFIG_PREFIX = "philips_avent_bridge_"
 BRIDGE_CONFIG_SUFFIX = ".json"
 
@@ -48,8 +53,9 @@ def dps_delta(old: dict | None, new: dict | None, max_chars: int = DELTA_VALUE_M
     time (issues #42, #61): a sound alert that lands in an unexpected DPS leaves
     no trace at all.
 
-    Long values are cut to `max_chars`, which keeps a base64 alarm record
-    readable without filling the log with a snapshot reference.
+    Values go through `redact_dps` first, so the DPS 212 alarm record shows up
+    decoded with its cloud snapshot reference stripped; long values are then
+    cut to `max_chars`.
     """
     if not new:
         return {}
@@ -64,10 +70,12 @@ def truncated_dps(dps: dict | None, max_chars: int = DELTA_VALUE_MAX_CHARS) -> d
     """DPS entries with long values cut down, for logging a push as it arrived.
 
     A push is worth logging even when it repeats a value, so this keeps every key
-    it was given.
+    it was given. Values are redacted (`redact_dps`) before they are cut, so a
+    snapshot reference never reaches the log, cut or not.
     """
     if not dps:
         return {}
+    dps = redact_dps(dps)
     return {
         key: (
             value[:max_chars] + f"...(+{len(value) - max_chars} chars)"

@@ -268,7 +268,7 @@ class PhilipsAventCoordinator(DataUpdateCoordinator):
         if self._lan_client and self._lan_client.connected:
             result = await self._lan_client.set_dps(dps)
             if result:
-                _LOGGER.debug("DPS sent via LAN for %s: %s", self.camera_name, dps)
+                _LOGGER.debug("DPS sent via LAN for %s: %s", self.camera_name, truncated_dps(dps))
                 if self.data is not None:
                     optimistic = {str(k): v for k, v in dps.items()}
                     lullaby_cmd = optimistic.get(DPS_LULLABY_CONTROL)

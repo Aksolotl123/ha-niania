@@ -10,8 +10,8 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/Aksolotl123/ha-niania/issues",
   "requirements": [
-    "pycryptodome>=3.20.0",
-    "tinytuya>=1.15.0"
+    "pycryptodome>=3.20.0,<4",
+    "tinytuya>=1.15.0,<2"
   ],
-  "version": "2026.8.0"
+  "version": "2026.8.1"
 }
