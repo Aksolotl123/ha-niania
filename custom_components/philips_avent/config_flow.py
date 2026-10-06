@@ -269,8 +269,14 @@ class PhilipsAventConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         self._api.sid = result["sid"]
 
-        hosts = hosts_from_domain(result.get("domain"))
+        domain = result.get("domain")
+        hosts = hosts_from_domain(domain)
         reported_host = hosts.get("api_host")
+        if not reported_host and isinstance(domain, dict) and domain.get("mobileApiUrl"):
+            _LOGGER.warning(
+                "Tuya login response named an API host outside Tuya's domains; ignored, keeping %s",
+                self._api_host,
+            )
         if reported_host and reported_host != self._api_host:
             _LOGGER.info(
                 "Tuya reports API host %s for this account (region %s); using it instead of %s",

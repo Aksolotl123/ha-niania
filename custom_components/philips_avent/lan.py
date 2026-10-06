@@ -79,7 +79,12 @@ class TuyaLANClient:
     async def _discover_device(self) -> tuple[str | None, float | None]:
         """Find the monitor on the LAN, keeping the protocol version it announces."""
         def _scan():
-            devices = tinytuya.deviceScan(maxretry=SCAN_MAXRETRY)
+            # poll=False: the default connects to and queries every Tuya
+            # device the broadcast finds (with keys from a devices.json in the
+            # working directory, or unauthenticated for 3.1 firmware). The
+            # broadcast alone carries the IP and protocol version we need, and
+            # this firmware does not answer DP_QUERY anyway (see below).
+            devices = tinytuya.deviceScan(maxretry=SCAN_MAXRETRY, poll=False)
             for ip, info in devices.items():
                 if info.get("gwId") == self._device_id:
                     return ip, parse_protocol_version(info.get("version"))

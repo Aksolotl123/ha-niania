@@ -192,6 +192,42 @@ class TestDomainBlock:
         assert normalize_api_host(None) is None
         assert normalize_api_host("") is None
 
+    def test_every_known_tuya_host_is_accepted(self):
+        for host in DATA_CENTER_HOSTS.values():
+            assert normalize_api_host(host) == host
+            mqtt = "m1." + host.split(".", 1)[1]
+            assert normalize_api_host(mqtt) == mqtt
+        assert normalize_api_host("a1-ueaz.tuyaus.com") == "a1-ueaz.tuyaus.com"
+        assert normalize_api_host("a1.weaz.tuyaeu.com") == "a1.weaz.tuyaeu.com"
+        assert normalize_api_host("a1.tuyaeu.com:443") == "a1.tuyaeu.com:443"
+
+    def test_host_is_lower_cased(self):
+        assert normalize_api_host("HTTPS://A1.TuyaEU.com/api.json") == "a1.tuyaeu.com"
+
+    def test_hosts_outside_tuya_domains_are_rejected(self):
+        for value in (
+            "evil.example",
+            "https://evil.example/api.json",
+            "a1.tuyaeu.com.evil.example",
+            "a1.tuyaeu.com@evil.example",
+            "eviltuyaeu.com",
+            "tuyaeu.com",
+            "a1.tuyaxx.com",
+            "a1.tuyaeu.co",
+            "a1.tuyaeu.com\\evil.example",
+            "a1.tuyaeu.com:443:80",
+            "a1.tuyaeu.com:",
+            "ａ1.tuyaeu.com",
+        ):
+            assert normalize_api_host(value) is None, value
+
+    def test_rejected_hosts_are_left_out_of_the_domain_block(self):
+        assert hosts_from_domain({
+            "mobileApiUrl": "https://evil.example/api.json",
+            "mobileMqttsUrl": "m1.evil.example",
+            "regionCode": "EU",
+        }) == {"region_code": "EU"}
+
     def test_api_url_for_host_round_trips_with_the_data_center_tables(self):
         for name, host in DATA_CENTER_HOSTS.items():
             assert api_url_for_host(host) == api_url(name)

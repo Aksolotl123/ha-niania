@@ -137,6 +137,32 @@ def _decode_json_value(raw: str) -> dict | list | None:
     return decoded if isinstance(decoded, (dict, list)) else None
 
 
+def _decode_layers(raw: str) -> str | None:
+    """Peel base64 (also nested) and hex layers off a DPS string.
+
+    DPS 4 is base64 of hex of JSON (senseiq.py), and a value that is base64 of
+    plain text keeps a URL invisible to the ``"://"`` check below. Returns the
+    innermost text, or None when the value was not encoded at all.
+    """
+    text = raw.strip()
+    peeled = None
+    for _ in range(3):
+        try:
+            text = base64.b64decode(text, validate=True).decode("utf-8")
+        except (binascii.Error, ValueError, UnicodeDecodeError):
+            break
+        peeled = text
+        try:
+            text = bytes.fromhex(text).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            pass
+        else:
+            peeled = text
+        if text.lstrip().startswith(("{", "[")):
+            break
+    return peeled
+
+
 def _scrub_urls(value):
     """Redact keys as ``redact_secrets`` does, and any string holding a URL."""
     if isinstance(value, dict):
@@ -168,6 +194,13 @@ def redact_dps_value(key: object, value):
     decoded = _decode_json_value(value)
     if decoded is not None:
         return _scrub_urls(decoded)
+    inner = _decode_layers(value)
+    if inner is not None:
+        nested = _decode_json_value(inner)
+        if nested is not None:
+            return _scrub_urls(nested)
+        if "://" in inner:
+            return f"{REDACTED} (encoded, {len(value)} chars)"
     if str(key) == DPS_ALARM_RECORD and value.strip():
         return f"{REDACTED} (undecoded, {len(value)} chars)"
     if "://" in value:

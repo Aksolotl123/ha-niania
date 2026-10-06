@@ -249,6 +249,29 @@ class TestRedactDps:
         dps = {"101": True, "103": 0, "141": "decibel_upload", "201": "play", "207": 2310, "212": ""}
         assert redact_dps(dps) == dps
 
+    def test_url_inside_base64_text_is_redacted(self):
+        raw = base64.b64encode(b"https://example.invalid/fake-bucket/a.jpeg").decode()
+        out = redact_dps({"150": raw})["150"]
+        assert out.startswith(REDACTED)
+        assert raw not in out
+
+    def test_double_base64_json_is_decoded_and_scrubbed(self):
+        out = redact_dps({"185": base64.b64encode(_alarm_record().encode()).decode()})["185"]
+        assert out["files"] == REDACTED
+        assert out["cmd"] == "ipc_baby_cry"
+        assert "fake-bucket" not in repr(out)
+
+    def test_base64_of_hex_of_json_is_decoded_and_scrubbed(self):
+        # The DPS 4 shape (senseiq.py): base64 of hex of JSON.
+        inner = json.dumps({"s": "a", "url": "https://example.invalid/x", "localKey": "fakekey"})
+        raw = base64.b64encode(inner.encode().hex().encode()).decode()
+        out = redact_dps({"4": raw})["4"]
+        assert out == {"s": "a", "url": REDACTED, "localKey": REDACTED}
+
+    @pytest.mark.parametrize("value", ["true", "0000", "abcd", "play", "decibel_upload", "MTIz"])
+    def test_short_values_that_happen_to_be_base64_are_untouched(self, value):
+        assert redact_dps({"141": value}) == {"141": value}
+
     def test_none_and_input_not_mutated(self):
         assert redact_dps(None) is None
         dps = {"212": _alarm_record()}

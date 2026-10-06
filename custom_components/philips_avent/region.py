@@ -11,6 +11,8 @@ without an HA runtime (see `tests/test_philips_avent/test_region.py`).
 """
 from __future__ import annotations
 
+import re
+
 # Tuya data-center API hosts. Keys are the short region names Tuya uses for
 # its endpoints (a1.tuya<region>.com) and are also what we persist in the
 # config entry, so they must stay stable.
@@ -22,6 +24,15 @@ DATA_CENTER_HOSTS: dict[str, str] = {
 }
 
 DEFAULT_DATA_CENTER = "eu"
+
+# Only hosts in Tuya's own domains (tuya<region>.com for the data centers
+# above) are accepted from a login response: the session id and the request
+# signatures go to whatever host is stored, so a tampered or spoofed response
+# must not be able to point them elsewhere. An explicit port is tolerated, as
+# it was before this check existed.
+TUYA_HOST_PATTERN = re.compile(
+    r"(?:[a-z0-9-]+\.)+tuya(?:" + "|".join(map(re.escape, DATA_CENTER_HOSTS)) + r")\.com(?::[0-9]{1,5})?"
+)
 
 # Order in which unknown accounts are probed: EU first (where these monitors
 # are mostly sold), then the Americas, then India and China.
@@ -150,13 +161,16 @@ def normalize_api_host(value: str | None) -> str | None:
     """Reduce a `domain.mobileApiUrl` value to a bare host.
 
     Tuya returns these either as a bare host (`a1.tuyaeu.com`) or as a full
-    URL, so both forms are accepted. Returns None when there is nothing usable.
+    URL, so both forms are accepted. Returns None when there is nothing usable,
+    and for any host outside Tuya's own domains (``TUYA_HOST_PATTERN``).
     """
     if not value:
         return None
-    host = value.strip().removeprefix("https://").removeprefix("http://")
+    host = value.strip().lower().removeprefix("https://").removeprefix("http://")
     host = host.split("/", 1)[0].strip()
-    return host or None
+    if not host or not TUYA_HOST_PATTERN.fullmatch(host):
+        return None
+    return host
 
 
 def hosts_from_domain(domain: object) -> dict[str, str]:

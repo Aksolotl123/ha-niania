@@ -13,5 +13,5 @@
     "pycryptodome>=3.20.0,<4",
     "tinytuya>=1.15.0,<2"
   ],
-  "version": "2026.8.1"
+  "version": "2026.8.2"
 }
