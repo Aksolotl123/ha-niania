@@ -2,6 +2,7 @@
 
 from lan_policy import (
     DATA_TIMEOUT,
+    DPS_SILENCE_TIMEOUT,
     HEARTBEAT_INTERVAL,
     LAN_ERR_CONNECT,
     LAN_ERR_OFFLINE,
@@ -10,6 +11,7 @@ from lan_policy import (
     PROTOCOL_VERSION_DEFAULT,
     RECONNECT_DELAY,
     data_stale,
+    dps_silent,
     heartbeat_due,
     is_connection_error,
     parse_protocol_version,
@@ -56,6 +58,43 @@ class TestDataWatchdog:
             now = tick * HEARTBEAT_INTERVAL
             assert not data_stale(now, last_data)
             last_data = now
+
+
+class TestDpsSilenceWatchdog:
+    def test_silent_only_after_the_timeout(self):
+        assert not dps_silent(now=100.0, last_dps=100.0)
+        assert not dps_silent(now=100.0 + DPS_SILENCE_TIMEOUT, last_dps=100.0)
+        assert dps_silent(now=100.0 + DPS_SILENCE_TIMEOUT + 0.1, last_dps=100.0)
+
+    def test_answered_heartbeats_do_not_hide_a_silent_session(self):
+        # The 2026-10-09 case: every heartbeat is acked, so DATA_TIMEOUT never
+        # fires, but no DPS arrives. The DPS watchdog must still trip.
+        last_data = last_dps = 0.0
+        tripped_at = None
+        for tick in range(1, 500):
+            now = tick * HEARTBEAT_INTERVAL
+            assert not data_stale(now, last_data)
+            if dps_silent(now, last_dps):
+                tripped_at = now
+                break
+            last_data = now  # heartbeat ack only, no push
+        assert tripped_at is not None
+        assert tripped_at <= DPS_SILENCE_TIMEOUT + HEARTBEAT_INTERVAL
+
+    def test_regular_pushes_keep_it_quiet(self):
+        # SenseIQ pushes DPS 4 about once a minute even with nobody in bed.
+        last_dps = 0.0
+        for minute in range(1, 120):
+            now = minute * 60.0
+            assert not dps_silent(now, last_dps)
+            last_dps = now
+
+    def test_longer_than_the_heartbeat_and_shorter_than_the_data_timeout(self):
+        assert HEARTBEAT_INTERVAL < DPS_SILENCE_TIMEOUT < DATA_TIMEOUT
+
+    def test_timeout_is_overridable(self):
+        assert dps_silent(now=11.0, last_dps=0.0, timeout=10.0)
+        assert not dps_silent(now=9.0, last_dps=0.0, timeout=10.0)
 
 
 class TestReconnectDelay:

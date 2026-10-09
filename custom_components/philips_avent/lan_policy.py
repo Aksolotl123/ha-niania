@@ -16,6 +16,18 @@ HEARTBEAT_INTERVAL = 8.0
 # connection answers every heartbeat, so this only fires on a wedged socket.
 DATA_TIMEOUT = 600.0
 
+# Force a reconnect when no DPS push has arrived for this long, even though the
+# heartbeats are still answered. The monitor pushes SenseIQ over the LAN only
+# (DPS 3 every few seconds with the baby in bed, DPS 4 about once a minute), and a
+# session can end up acking every heartbeat while pushing nothing: on 2026-10-09
+# In Bed and the sleep stage froze for seven hours until the entry was reloaded,
+# and the new session pushed DPS 3 within a second. Heartbeats keep DATA_TIMEOUT
+# quiet, so this watchdog counts real pushes only. 90 s is well past the one-minute
+# DPS 4 rhythm and keeps a frozen In Bed short (the motion alert depends on it). A
+# fresh session gets a push at once, so on a monitor that is merely quiet (empty
+# crib, sparser DPS 4) the cost is one cheap reconnect.
+DPS_SILENCE_TIMEOUT = 90.0
+
 # Delay before retrying a connection, from the second consecutive failure on.
 RECONNECT_DELAY = 15.0
 
@@ -57,6 +69,11 @@ def heartbeat_due(now: float, last_heartbeat: float, interval: float = HEARTBEAT
 def data_stale(now: float, last_data: float, timeout: float = DATA_TIMEOUT) -> bool:
     """True when nothing has been received for `timeout` seconds."""
     return now - last_data > timeout
+
+
+def dps_silent(now: float, last_dps: float, timeout: float = DPS_SILENCE_TIMEOUT) -> bool:
+    """True when no DPS push has arrived for `timeout` seconds."""
+    return now - last_dps > timeout
 
 
 def reconnect_delay(consecutive_failures: int, delay: float = RECONNECT_DELAY) -> float:

@@ -12,8 +12,10 @@ import tinytuya
 from homeassistant.core import HomeAssistant
 
 from .lan_policy import (
+    DPS_SILENCE_TIMEOUT,
     PROTOCOL_VERSION_DEFAULT,
     data_stale,
+    dps_silent,
     heartbeat_due,
     is_connection_error,
     parse_protocol_version,
@@ -194,6 +196,8 @@ class TuyaLANClient:
     async def _run(self) -> None:
         last_data = time.monotonic()
         last_heartbeat = last_data
+        # Heartbeat acks refresh last_data; only real pushes refresh last_dps.
+        last_dps = last_data
         failures = 0
         payload_errors = 0
 
@@ -205,10 +209,20 @@ class TuyaLANClient:
                     continue
                 last_data = time.monotonic()
                 last_heartbeat = last_data
+                last_dps = last_data
                 payload_errors = 0
 
             if data_stale(time.monotonic(), last_data):
                 _LOGGER.debug("No LAN data within the timeout, reconnecting")
+                self._disconnect()
+                continue
+
+            if dps_silent(time.monotonic(), last_dps):
+                _LOGGER.info(
+                    "No DPS push from %s for %d s although heartbeats are answered, reconnecting",
+                    self._log_id,
+                    DPS_SILENCE_TIMEOUT,
+                )
                 self._disconnect()
                 continue
 
@@ -246,6 +260,7 @@ class TuyaLANClient:
                     payload_errors = 0
 
                     if data.get("dps"):
+                        last_dps = last_data
                         try:
                             self._on_dps_update(data["dps"])
                         except Exception:
