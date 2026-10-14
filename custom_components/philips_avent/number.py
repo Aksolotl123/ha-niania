@@ -1,13 +1,13 @@
 """Number entities for Philips Avent Baby Monitor."""
 from __future__ import annotations
 
-from homeassistant.components.number import NumberEntity
+from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, DPS_BRIGHTNESS, DPS_LULLABY_VOLUME
+from .const import DOMAIN, DPS_AWAKE_DELAY, DPS_BRIGHTNESS, DPS_LULLABY_VOLUME
 from .coordinator import PhilipsAventCoordinator
 from .entity import build_device_info
 
@@ -22,6 +22,14 @@ async def async_setup_entry(
             AventNumber(coordinator, cam_id, DPS_BRIGHTNESS, "Night Light Brightness", "mdi:brightness-6", 1, 100, 1, "%"),
             AventNumber(coordinator, cam_id, DPS_LULLABY_VOLUME, "Lullaby Volume", "mdi:volume-medium", 1, 100, 1, "%"),
         ])
+        # SenseIQ "baby awake" alert delay; range from the product schema.
+        if DPS_AWAKE_DELAY in (coordinator.data or {}):
+            entities.append(
+                AventNumber(
+                    coordinator, cam_id, DPS_AWAKE_DELAY, "Awake Alert Delay", "mdi:timer-outline",
+                    0, 3600, 1, "s", mode=NumberMode.BOX,
+                )
+            )
     async_add_entities(entities)
 
 
@@ -32,12 +40,14 @@ class AventNumber(CoordinatorEntity, NumberEntity):
         self, coordinator: PhilipsAventCoordinator, cam_id: str,
         dps_id: str, name: str, icon: str,
         min_val: float, max_val: float, step: float, unit: str,
+        mode: NumberMode = NumberMode.AUTO,
     ):
         super().__init__(coordinator)
         self._cam_id = cam_id
         self._dps_id = dps_id
         self._attr_name = name
         self._attr_icon = icon
+        self._attr_mode = mode
         self._attr_native_min_value = min_val
         self._attr_native_max_value = max_val
         self._attr_native_step = step

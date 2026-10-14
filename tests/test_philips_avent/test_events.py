@@ -105,6 +105,12 @@ class TestCommandMatching:
         # Not every firmware sets the flag; the command is the signal.
         assert motion_event_timestamp(encoded({"cmd": "ipc_motion", "time": 5})) == 5
 
+    def test_senseiq_family_motion_command(self):
+        # aventproxy#87: the SenseIQ family posts motion as `ipc_human`.
+        assert motion_event_timestamp(encoded({"cmd": "ipc_human", "alarm": True, "time": 6})) == 6
+        assert sound_event_timestamp(encoded({"cmd": "ipc_human", "time": 6})) is None
+        assert "ipc_human" in KNOWN_COMMANDS
+
     def test_sound_commands(self):
         for cmd in ("ipc_sound", "ipc_decibel", "sound", "decibel"):
             assert sound_event_timestamp(encoded({"cmd": cmd, "time": 7})) == 7

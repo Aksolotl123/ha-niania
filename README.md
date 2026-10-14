@@ -18,6 +18,8 @@ Do tego polskie tłumaczenie kreatora konfiguracji.
 - **SenseIQ (nowość w tym forku):** oddech na minutę, obecność dziecka w łóżeczku, ruch na żywo,
   faza snu (sen lekki / sen głęboki / ruch / poza łóżeczkiem — jak w aplikacji Philips), czas faktycznego snu i „w łóżeczku od”. Kamera wysyła te dane
   lokalnie przez LAN (DPS 3 i 4), więc działają tylko przy połączeniu LAN z nianią. Opis formatu: `senseiq.py`.
+- ustawienia SenseIQ jak w aplikacji Philips (modele z SenseIQ): przełączniki „SenseIQ”, „Awake Alert”
+  (alert „dziecko się obudziło”), „Cry Alert” (alert płaczu) i opóźnienie alertu przebudzenia „Awake Alert Delay” (s).
 
 „Motion Detected” to alarm ruchu z kamery (z opóźnieniem po stronie kamery i podtrzymaniem 30 s) —
 nadaje się do powiadomień. „Moving” to ruch na żywo z SenseIQ, odświeżany co kilka sekund.

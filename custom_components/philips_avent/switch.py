@@ -11,13 +11,23 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DOMAIN,
+    DPS_AWAKE_SWITCH,
+    DPS_CRY_DET_SWITCH,
     DPS_MOTION_SWITCH,
     DPS_NIGHT_LIGHT,
     DPS_PRIVACY_MODE,
+    DPS_SENSEIQ_SWITCH,
     DPS_SOUND_SWITCH,
 )
 from .coordinator import PhilipsAventCoordinator
 from .entity import build_device_info
+
+# Created only when the monitor reports the DPS (SenseIQ models).
+SENSEIQ_SWITCHES = (
+    (DPS_SENSEIQ_SWITCH, "SenseIQ", "mdi:baby-face-outline"),
+    (DPS_AWAKE_SWITCH, "Awake Alert", "mdi:baby-face"),
+    (DPS_CRY_DET_SWITCH, "Cry Alert", "mdi:emoticon-cry-outline"),
+)
 
 
 async def async_setup_entry(
@@ -32,6 +42,12 @@ async def async_setup_entry(
             AventSwitch(coordinator, cam_id, DPS_SOUND_SWITCH, "Sound Alert", "mdi:ear-hearing"),
             AventEnumSwitch(coordinator, cam_id, DPS_PRIVACY_MODE, "Privacy Mode", "mdi:eye-off"),
         ])
+        dps = coordinator.data or {}
+        entities.extend(
+            AventSwitch(coordinator, cam_id, dps_id, name, icon)
+            for dps_id, name, icon in SENSEIQ_SWITCHES
+            if dps_id in dps
+        )
     async_add_entities(entities)
 
 

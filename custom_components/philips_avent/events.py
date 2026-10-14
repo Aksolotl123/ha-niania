@@ -37,7 +37,10 @@ _LOGGER = logging.getLogger(__name__)
 # `is_new_event` also requires a stamp newer than the last one acted on.
 EVENT_MAX_AGE_SECONDS = 180.0
 
-MOTION_COMMANDS = frozenset({"ipc_motion", "ipc_move", "motion"})
+# `ipc_human` is the motion/human alert of the SenseIQ family (productId
+# 7d9t0rygsm7ztnww), reported on thekoma/aventproxy#87. The SCD923 here posted
+# `ipc_motion` so far, but an unlisted command would leave the sensor off.
+MOTION_COMMANDS = frozenset({"ipc_motion", "ipc_move", "ipc_human", "motion"})
 # `ipc_bang` is what the SCD953 posts for a noise alert, confirmed by the
 # diagnostics on #42. Until it was listed here the sound sensor stayed off while
 # the Philips app notified. A cry is a sound alert on a baby monitor, so

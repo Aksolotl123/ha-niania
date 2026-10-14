@@ -72,6 +72,13 @@ DPS_ALARM_RECORD = "212"
 # SenseIQ, pushed over the LAN only (see senseiq.py): breathing and sleep session.
 DPS_SENSEIQ_BREATHING = "3"
 DPS_SENSEIQ_SLEEP = "4"
+# SenseIQ settings from the product schema (productId 7d9t0rygsm7ztnww), the same
+# switches the Philips app shows. Entities for them exist only on monitors that
+# report these DPS, so other models are unaffected.
+DPS_SENSEIQ_SWITCH = "1"   # sleepiq_switch, bool
+DPS_AWAKE_DELAY = "8"      # awake_delay, seconds 0-3600
+DPS_AWAKE_SWITCH = "11"    # awake_switch, "baby awake" alert, bool
+DPS_CRY_DET_SWITCH = "12"  # cry_det_switch, cry alert, bool
 
 LULLABY_TRACK_MAP = {
     3542154: ("Baa Baa Black Sheep", "lullabies"),
