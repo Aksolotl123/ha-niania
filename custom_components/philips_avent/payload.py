@@ -99,6 +99,8 @@ def build_bridge_config(
     bridge_port: int,
     cameras: list,
     talkback: bool = False,
+    uid: str = "",
+    lan: dict[str, dict] | None = None,
 ) -> dict:
     """Build the bridge JSON the add-on reads.
 
@@ -107,6 +109,9 @@ def build_bridge_config(
     by any other host (issues #44, #58). `talkback` asks the camera for two-way
     audio, which the monitor answers by stopping a playing lullaby, so it
     defaults to off (issue #72).
+    `uid` lets the bridge start with no cloud; `lan` maps a camera id to its
+    `local_key`, `p2p_password`, `lan_ip` and `lan_protocol` for LAN signalling
+    (upstream aventproxy 2026.11.0).
     """
     return {
         "signing_key": signing_key,
@@ -118,12 +123,14 @@ def build_bridge_config(
         "package_name": package_name,
         "api_host": api_host,
         "talkback": talkback,
+        "uid": uid,
+        "lan_streaming": True,
         "bridge_port": bridge_port,
-        "cameras": build_cameras_payload(cameras),
+        "cameras": build_cameras_payload(cameras, lan),
     }
 
 
-def build_cameras_payload(cameras: list) -> list:
+def build_cameras_payload(cameras: list, lan: dict[str, dict] | None = None) -> list:
     """Build the canonical bridge-JSON cameras list.
 
     Accepts any of the dict shapes we may hold:
@@ -131,12 +138,15 @@ def build_cameras_payload(cameras: list) -> list:
     - raw Tuya discovery dict: ``{"devId"|"deviceId", "name"|"deviceName", "productId"|"productKey"}``
     - in-memory shape from async_setup_entry: ``{"deviceId", "deviceName", "productId"}``
 
-    Returns a list of ``{"camera_id", "camera_name", "product_id"}`` dicts —
-    the contract consumed by the Go bridge in ``cmd/addon/addon.go``.
+    Returns a list of ``{"camera_id", "camera_name", "product_id", "local_key",
+    "p2p_password", "lan_ip", "lan_protocol"}`` dicts — the contract consumed by
+    the Go bridge in ``cmd/addon/addon.go``. The last four come from
+    ``lan[camera_id]`` and are empty strings when unknown.
     """
+    lan = lan or {}
     return [
         {
-            "camera_id": cam.get("deviceId") or cam.get("devId") or cam.get("id", ""),
+            "camera_id": (camera_id := cam.get("deviceId") or cam.get("devId") or cam.get("id", "")),
             "camera_name": cam.get("deviceName") or cam.get("name", "camera"),
             "product_id": (
                 cam.get("productId")
@@ -144,9 +154,34 @@ def build_cameras_payload(cameras: list) -> list:
                 or cam.get("productKey")
                 or ""
             ),
+            "local_key": lan.get(camera_id, {}).get("local_key", ""),
+            "p2p_password": lan.get(camera_id, {}).get("p2p_password", ""),
+            "lan_ip": lan.get(camera_id, {}).get("lan_ip", ""),
+            "lan_protocol": lan.get(camera_id, {}).get("lan_protocol", ""),
         }
         for cam in cameras
     ]
+
+
+def previous_lan_values(text: str) -> dict[str, dict[str, str]]:
+    """Per camera ``lan_ip``, ``lan_protocol`` and ``p2p_password`` from an earlier bridge JSON.
+
+    Missing or corrupt text gives an empty result. Used to keep the file
+    byte-identical across restarts and to keep a password when the cloud call
+    that refreshes it fails.
+    """
+    try:
+        cameras = json.loads(text).get("cameras", [])
+        return {
+            cam["camera_id"]: {
+                "lan_ip": str(cam.get("lan_ip") or ""),
+                "lan_protocol": str(cam.get("lan_protocol") or ""),
+                "p2p_password": str(cam.get("p2p_password") or ""),
+            }
+            for cam in cameras
+        }
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return {}
 
 
 BRIDGE_CONFIG_MODE = 0o600

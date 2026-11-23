@@ -13,12 +13,14 @@ from homeassistant.core import HomeAssistant
 
 from .lan_policy import (
     DPS_SILENCE_TIMEOUT,
+    AddressPublisher,
     PROTOCOL_VERSION_DEFAULT,
     data_stale,
     dps_silent,
     heartbeat_due,
     is_connection_error,
     parse_protocol_version,
+    protocol_label,
     reconnect_delay,
     should_reconnect,
     version_candidates,
@@ -40,6 +42,9 @@ class TuyaLANClient:
         device_id: str,
         local_key: str,
         on_dps_update: Callable[[dict[str, Any]], None],
+        on_address_change: Callable[[str], None] | None = None,
+        last_ip: str | None = None,
+        last_protocol: str = "",
     ) -> None:
         self._hass = hass
         self._device_id = device_id
@@ -48,12 +53,28 @@ class TuyaLANClient:
         self._local_key = local_key
         self._on_dps_update = on_dps_update
         self._device: tinytuya.Device | None = None
-        self._ip: str | None = None
+        # Seeded with the address the bridge config last carried: tried directly
+        # first, so a restart needs no broadcast scan.
+        self._ip: str | None = last_ip or None
         self._announced_version: float | None = None
-        self._version: float | None = None
+        self._version: float | None = parse_protocol_version(last_protocol) if last_protocol else None
+        self._address = AddressPublisher(on_address_change, last_ip, last_protocol)
         self._task: asyncio.Task | None = None
         self._stop_event = asyncio.Event()
         self.connected: bool = False
+
+    @property
+    def ip(self) -> str | None:
+        """The last address published for the bridge (or seeded), not the live one."""
+        return self._address.last
+
+    @property
+    def protocol(self) -> str:
+        """The protocol published with that address, such as "3.5"; "" when unknown."""
+        return self._address.protocol
+
+    def _publish_address(self) -> None:
+        self._address.update(self._ip, protocol_label(self._version))
 
     async def start(self) -> None:
         self._stop_event.clear()
@@ -143,6 +164,7 @@ class TuyaLANClient:
                 self._device = device
                 self.connected = True
                 _LOGGER.info("LAN reconnected to %s at %s", self._log_id, self._ip)
+                self._publish_address()
                 return True
             self._ip = None
 
@@ -163,6 +185,7 @@ class TuyaLANClient:
             self._device = device
             self.connected = True
             _LOGGER.info("LAN connected to %s at %s", self._log_id, self._ip)
+            self._publish_address()
             return True
 
         _LOGGER.debug("LAN connection failed for %s at %s", self._log_id, self._ip)

@@ -5,6 +5,8 @@ an HA runtime; `lan.py` owns the sockets and calls into here.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
+
 # The monitor closes an idle LAN socket after roughly 30-45 seconds, which shows
 # up as "Unexpected Payload from Device" followed by a reconnect every ~30s
 # (issue #62). tinytuya leaves keep-alive to the caller on persistent sockets, so
@@ -134,3 +136,45 @@ def version_candidates(
     if default not in candidates:
         candidates.append(default)
     return candidates
+
+
+def protocol_label(version: float | None) -> str:
+    """The protocol version as the bridge config carries it, such as "3.5"; "" when unknown."""
+    return f"{version:g}" if version else ""
+
+
+class AddressPublisher:
+    """Report the monitor's LAN address and protocol when the pair becomes new and complete.
+
+    Ported from upstream aventproxy 2026.11.0. The LAN client clears its address
+    on every failed connect and refills it after rediscovery. Reporting those
+    blips would rewrite the bridge JSON, and restart the bridge, twice per
+    hiccup, so losing the address says nothing and a return to the last
+    reported pair says nothing either. The protocol rides along because the
+    bridge's LAN path speaks only 3.5.
+    """
+
+    def __init__(
+        self, callback: Callable[[str], None] | None, last: str | None = None, protocol: str = ""
+    ) -> None:
+        self._callback = callback
+        # Seeded from the bridge JSON on start, so rediscovery at the same address stays silent.
+        self._last = last or None
+        self._protocol = protocol or ""
+
+    @property
+    def last(self) -> str | None:
+        """The last address reported (or seeded): what the bridge JSON carries."""
+        return self._last
+
+    @property
+    def protocol(self) -> str:
+        """The protocol reported (or seeded) with that address, such as "3.5"; "" when unknown."""
+        return self._protocol
+
+    def update(self, ip: str | None, protocol: str | None) -> None:
+        if not ip or not protocol or (ip, protocol) == (self._last, self._protocol):
+            return
+        self._last, self._protocol = ip, protocol
+        if self._callback:
+            self._callback(ip)

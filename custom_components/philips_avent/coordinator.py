@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import time
+from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
 
@@ -85,7 +86,13 @@ class PhilipsAventCoordinator(DataUpdateCoordinator):
         self.sleep: dict | None = None
         self._sleep_at: float | None = None
 
-    async def start_lan(self) -> None:
+    async def start_lan(
+        self,
+        on_address_change: Callable[[str], None] | None = None,
+        last_ip: str | None = None,
+        last_protocol: str = "",
+    ) -> None:
+        """Start the LAN session; `on_address_change` hears each new address for the bridge."""
         if not self._local_key:
             return
         self._lan_client = TuyaLANClient(
@@ -93,8 +100,26 @@ class PhilipsAventCoordinator(DataUpdateCoordinator):
             self.camera_id,
             self._local_key,
             self._on_lan_dps_update,
+            on_address_change,
+            last_ip,
+            last_protocol,
         )
         await self._lan_client.start()
+
+    @property
+    def local_key(self) -> str | None:
+        """The key the LAN session uses."""
+        return self._local_key
+
+    @property
+    def lan_ip(self) -> str | None:
+        """The monitor's LAN address last published for the bridge."""
+        return self._lan_client.ip if self._lan_client else None
+
+    @property
+    def lan_protocol(self) -> str:
+        """The protocol version published with that address, such as "3.5"."""
+        return self._lan_client.protocol if self._lan_client else ""
 
     async def stop_lan(self) -> None:
         self._cancel_pending_lullaby()
